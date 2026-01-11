@@ -161,7 +161,10 @@ const EntryModal = ({
       if (part === 'title') {
         return `${provider} Cancel Maintenance`;
       }
-      return ` `;
+      // Return date in YYYY/MM/DD format
+      if (!startTime) return "";
+      const dateFormatted = startTime.format('YYYY/MM/DD');
+      return `${dateFormatted}`;
     }
     // --------------------------------
     

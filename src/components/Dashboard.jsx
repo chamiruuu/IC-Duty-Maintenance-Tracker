@@ -21,7 +21,7 @@ import {
   Gamepad2, User, CheckSquare, History as HistoryIcon, LayoutList,
   ShieldCheck, Shield, Users, LogOut, Check, Bell, Zap,
   PlayCircle, AlertTriangle, Timer, CheckCircle2, Ban,
-  MessageSquarePlus, Eraser, Lock, Info
+  MessageSquarePlus, Eraser, Lock, Info, Activity
 } from 'lucide-react';
 
 import NotificationToast from './NotificationToast';
@@ -62,6 +62,10 @@ const Dashboard = ({ session }) => {
   const [isRefreshing, setIsRefreshing] = useState(false); 
   const [userProfile, setUserProfile] = useState({ role: 'normal', work_name: '' });
   const isHighLevel = ['admin', 'leader'].includes(userProfile.role);
+
+  // --- PRESENCE STATE ---
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [isPresenceMenuOpen, setIsPresenceMenuOpen] = useState(false);
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -108,6 +112,7 @@ const Dashboard = ({ session }) => {
     endTime: null
   });
 
+  // --- INITIAL DATA & TIME SYNC ---
   useEffect(() => {
     fetchUserProfile();
     fetchMaintenances();
@@ -143,20 +148,51 @@ const Dashboard = ({ session }) => {
     };
   }, []);
 
+  // --- PRESENCE SYSTEM ---
+  useEffect(() => {
+    if (!userProfile.work_name) return;
+
+    const presenceChannel = supabase.channel('system_presence', {
+        config: { presence: { key: session.user.id } },
+    });
+
+    presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+            const state = presenceChannel.presenceState();
+            const users = [];
+            for (const key in state) {
+                if (state[key] && state[key].length > 0) {
+                    users.push(state[key][0]);
+                }
+            }
+            setActiveUsers(users);
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await presenceChannel.track({
+                    name: userProfile.work_name,
+                    role: userProfile.role,
+                    online_at: new Date().toISOString(),
+                });
+            }
+        });
+
+    return () => {
+        supabase.removeChannel(presenceChannel);
+    };
+  }, [userProfile.work_name]);
+
+  // --- NOTIFICATION LOGIC ---
   useEffect(() => {
     const checkTimer = setInterval(() => {
        const now = new Date(); 
        maintenances.forEach(m => {
-          // B. POST-COMPLETION TRACKER (BO 8.2 Reminder)
           if (m.status === 'Completed' && !m.bo_deleted && m.completion_time) {
               const completeDate = parseISO(m.completion_time);
               const twoHoursLater = addHours(completeDate, 2);
               const diff = differenceInMinutes(now, twoHoursLater);
               
               const reminderId = `${m.id}-2hr-reminder`;
-              // Note: If completion time was backdated significantly, diff might be large.
-              // We trigger if it's within a window OR if it's way overdue but hasn't fired yet.
-              // For simplicity, we keep the original logic but ensure it catches "passed" time.
               if (Math.abs(diff) <= 5 && !alertedRef.current.has(reminderId)) {
                   triggerNotification(
                       `Action Required: BO 8.2 Cleanup`, 
@@ -223,19 +259,13 @@ const Dashboard = ({ session }) => {
   const timeZone = 'Asia/Shanghai';
   const zonedTime = toZonedTime(currentTime, timeZone);
   
-  // --- UPDATED GREETING LOGIC ---
   const getGreeting = () => {
     const h = parseInt(format(zonedTime, 'H', { timeZone }));
     const m = parseInt(format(zonedTime, 'm', { timeZone }));
     const name = userProfile.work_name || 'User';
 
-    // 07:00 to 13:59 -> Good Morning
     if (h >= 7 && h < 14) return `Good Morning, ${name}`;
-
-    // 14:00 to 22:29 -> Good Afternoon
     if ((h >= 14 && h < 22) || (h === 22 && m < 30)) return `Good Afternoon, ${name}`;
-
-    // 22:30 to 06:59 -> Good Night
     return `Good Night, ${name}`;
   };
 
@@ -269,9 +299,7 @@ const Dashboard = ({ session }) => {
     else { setEditingUser(null); fetchUserList(); }
   };
   
-  // --- UPDATED DELETE USER (REMOVED WINDOW.CONFIRM) ---
   const handleDeleteUser = async (userId, userName) => {
-    // Custom modal handles confirmation, so we just execute here
     const { error } = await supabase.rpc('delete_user', { target_user_id: userId });
     if (error) alert("Delete failed: " + error.message);
     else fetchUserList();
@@ -514,6 +542,7 @@ const Dashboard = ({ session }) => {
     });
   };
 
+  // --- FILTERING LOGIC ---
   const filteredMaintenances = getSortedMaintenances(maintenances.filter(item => {
     if (view === 'pending') {
         if (item.status === 'Completed') return !item.bo_deleted; 
@@ -532,18 +561,16 @@ const Dashboard = ({ session }) => {
     }
   }));
 
-  // --- UPDATED HELPER: ROBUST TIME CHECK ---
-  // Calculates minutes passed since completion using raw Date objects
   const getMinutesSinceCompletion = (completionTime) => {
       if (!completionTime) return 0;
-      const now = new Date(); // Always use LIVE time
-      const done = new Date(completionTime); // Force Date object
+      const now = new Date(); 
+      const done = new Date(completionTime); 
       const diffMs = now - done;
-      return Math.floor(diffMs / 1000 / 60); // Convert ms to minutes
+      return Math.floor(diffMs / 1000 / 60); 
   };
 
   const isBOCleanupEnabled = (completionTime) => {
-      return getMinutesSinceCompletion(completionTime) >= 120; // 120 mins = 2 hours
+      return getMinutesSinceCompletion(completionTime) >= 120; 
   };
 
   return (
@@ -559,6 +586,37 @@ const Dashboard = ({ session }) => {
             </div>
           </div>
           <div className="flex items-center gap-4">
+             {/* --- NEW: ACTIVE USERS BADGE (HOVER TO SEE LIST) --- */}
+             <div className="relative group">
+                <button className="flex items-center gap-2 px-2 py-1 bg-white border border-gray-100 rounded-full hover:bg-gray-50 transition-colors shadow-sm">
+                    <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-600">{activeUsers.length} Online</span>
+                </button>
+                {/* DROPDOWN - SHOWS ON HOVER */}
+                {activeUsers.length > 0 && (
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-100 rounded-lg shadow-xl z-50 overflow-hidden hidden group-hover:block animate-in fade-in zoom-in-95 duration-200">
+                        <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-widest">
+                            Currently Active
+                        </div>
+                        <ul className="max-h-40 overflow-y-auto">
+                            {activeUsers.map((u, i) => (
+                                <li key={i} className="px-3 py-2 text-xs text-gray-700 flex items-center justify-between hover:bg-gray-50">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                        <span className="font-medium truncate max-w-[100px]">{u.name}</span>
+                                    </div>
+                                    {u.role !== 'normal' && <span className="text-[8px] px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-gray-500 uppercase">{u.role}</span>}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+             </div>
+             {/* --------------------------------------------------- */}
+
              <span className="hidden md:block text-xs font-medium text-gray-500 animate-in fade-in slide-in-from-top-2">{getGreeting()}</span>
              <button onClick={() => setIsFeedbackModalOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors" title="Submit Feedback"><MessageSquarePlus size={18} /></button>
              <div className="relative">
@@ -582,7 +640,17 @@ const Dashboard = ({ session }) => {
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 w-12 text-center">#</th><th className="px-6 py-3">Redmine No</th><th className="px-6 py-3">Provider</th><th className="px-6 py-3">Type</th><th className="px-6 py-3">Schedule (UTC+8)</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-left">Recorder</th><th className="px-6 py-3 text-left">Completer</th><th className="px-6 py-3 text-left">BO Cleaner</th><th className="px-6 py-3 text-center">Verified</th><th className="px-6 py-3 text-right">Actions</th>
+                <th className="px-6 py-3 w-12 text-center">#</th>
+                <th className="px-6 py-3">Redmine No</th>
+                <th className="px-6 py-3">Provider</th>
+                <th className="px-6 py-3">Type</th> 
+                <th className="px-6 py-3">Schedule (UTC+8)</th>
+                <th className="px-6 py-3">Status</th>
+                <th className="px-6 py-3 text-left">Recorder</th>
+                <th className="px-6 py-3 text-left">Completer</th>
+                <th className="px-6 py-3 text-left">BO Cleaner</th>
+                <th className="px-6 py-3 text-center">Verified</th>
+                <th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -592,21 +660,16 @@ const Dashboard = ({ session }) => {
                   <td className="px-6 py-3">{item.status !== 'Cancelled' && item.redmine_ticket ? <a href={`${REDMINE_BASE_URL}${item.redmine_ticket}`} target="_blank" rel="noopener noreferrer" className="font-mono text-indigo-600 hover:underline flex items-center gap-1 w-fit">{getRedmineDisplayId(item.redmine_ticket)} <ExternalLink size={10} className="opacity-0 group-hover:opacity-100" /></a> : <span className="text-gray-400">-</span>}</td>
                   <td className="px-6 py-3"><div className="flex items-center gap-2"><Gamepad2 size={14} className="text-gray-400" /><div><div className={`font-medium ${item.status === 'Cancelled' ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{item.provider}</div><div className="text-xs text-gray-500 mt-0.5">{item.status === 'Cancelled' ? 'Cancelled' : item.type}</div></div></div></td>
                   
-                  {/* --- NEW TYPE COLUMN (Interactive EARLY badge) --- */}
                   <td className="px-6 py-3">{getTypeBadge(item)}</td>
 
-                  {/* STATIC SCHEDULE COLUMN (Pure DB Start/End) */}
                   <td className="px-6 py-3 font-mono text-gray-600 text-xs">{formatSmartDate(item.start_time, item.end_time, item.is_until_further_notice, item.status)}</td>
                   
-                  {/* STATUS COLUMN (Clock removed) */}
                   <td className="px-6 py-3">{getStatusBadge(item)}</td>
 
-                  {/* 1. RECORDER (Creator) */}
                   <td className="px-6 py-3 text-xs text-gray-600 font-medium">
                      <div className="flex items-center gap-1.5"><User size={12} className="text-gray-400" /> {item.recorder}</div>
                   </td>
 
-                  {/* 2. COMPLETER (Click Name to Undo if Admin) */}
                   <td className="px-6 py-3 text-xs">
                      {item.status === 'Completed' ? (
                         <button 
@@ -626,7 +689,6 @@ const Dashboard = ({ session }) => {
                      )}
                   </td>
 
-                  {/* 3. BO CLEANER (UPDATED LOGIC WITH DEBUG TOOLTIP) */}
                   <td className="px-6 py-3 text-xs">
                      {item.bo_deleted_by ? (
                         <button 
@@ -640,12 +702,10 @@ const Dashboard = ({ session }) => {
                      ) : (
                         item.status === 'Completed' && (
                             isBOCleanupEnabled(item.completion_time) ? (
-                                // ENABLED (>= 120 mins passed)
                                 <button onClick={() => handleConfirmBODeleted(item)} className="p-1.5 rounded-md bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all shadow-sm animate-pulse" title="Confirm BO 8.2 Deleted">
                                     <Eraser size={16} />
                                 </button>
                             ) : (
-                                // DISABLED (< 120 mins passed) - NOW WITH DEBUG TOOLTIP
                                 <div className="flex items-center gap-1" title={`${120 - getMinutesSinceCompletion(item.completion_time)} mins remaining until unlock`}>
                                     <button disabled className="p-1.5 rounded-md bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200">
                                         <Eraser size={16} />
@@ -659,7 +719,6 @@ const Dashboard = ({ session }) => {
 
                   <td className="px-6 py-3 text-center"><button onClick={() => toggleVerified(item.id, item.setup_confirmed)} className={`flex items-center justify-center gap-1 mx-auto transition-all ${!isHighLevel ? 'cursor-default' : 'hover:scale-110 active:scale-95'}`} title={item.setup_confirmed ? `Verified by ${item.verified_by_name}` : "Not Verified"}>{item.setup_confirmed ? <><ShieldCheck size={18} className="text-blue-600 fill-blue-50" />{!isHighLevel && <span className="text-[10px] font-bold text-gray-500">{item.verified_by_name}</span>}</> : <Shield size={18} className="text-gray-300" />}</button></td>
                   
-                  {/* ACTIONS COLUMN (Edit/Delete/Cancel only) */}
                   <td className="px-6 py-3 text-right">
                      <div className="flex justify-end gap-2">
                         <button onClick={() => handleEdit(item)} className="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Edit"><Edit2 size={15} /></button>

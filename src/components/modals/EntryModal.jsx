@@ -159,7 +159,7 @@ const EntryModal = ({
     // --- NEW: CANCELLED TYPE CHECK ---
     if (type === 'Cancelled') {
       if (part === 'title') {
-        return `【${provider}】 Cancel Maintenance`;
+        return `${provider}Cancel Maintenance`;
       }
       return `Please be informed that the scheduled maintenance for 【${provider}】 has been cancelled.`;
     }

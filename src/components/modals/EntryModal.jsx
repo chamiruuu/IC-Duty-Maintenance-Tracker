@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { X, Link as LinkIcon, Loader2, AlertCircle } from 'lucide-react';
+import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search } from 'lucide-react';
 import CopyButton from '../CopyButton';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -10,29 +10,78 @@ import timezone from 'dayjs/plugin/timezone';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+// --- FULL PROVIDER LIST ---
 const PROVIDERS = [
-  "C-Sports", "SA Gaming", "Evolution", "PP Casino", "SBO", "Sexy Casino", 
-  "WM", "DG Casino", "AE Sexy", "Venus", "SV388"
+  "C-Sports", "I-Sports", "OPUS Sport", "SBO", "BTi", "IMSB", "WBet",
+  "PA Casino", "ALLBET", "BG Casino", "DG Casino", "GP Casino", "Opus Casino",
+  "OG Plus", "GClub Live", "Sexy Casino", "Evolution Gaming", "SA Gaming",
+  "WM", "PP Casino", "Yeebet", "PT Casino", "MG Live", "Spadegaming",
+  "CQ9 Slots", "HBS", "MG+ Slot", "PG Soft", "Pragmatic Play", "PP Streaming",
+  "PT Slots", "YGG", "Joker", "Playstar", "BNG", "AWC", "DC", "SKYWIND",
+  "NETENT", "FastSpin", "JILI", "CG", "Next Spin", "RSG", "NoLimit City",
+  "OG Slots", "Relax gaming", "Hacksaw", "YGR", "AdvantPlay", "Octoplay",
+  "FatPanda", "2J", "GGSoft", "SABA Number Game", "QQKENO", "QQThai",
+  "QQViet", "QQ4D", "PokerQ"
 ];
 
 const EntryModal = ({ 
   isOpen, onClose, formData, setFormData, handleConfirm, loading, editingId, errors, setErrors, existingMaintenances 
 }) => {
   
+  // --- SEARCH STATE ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Sync searchTerm when formData loads (for Editing)
   useEffect(() => {
-    if(isOpen) setErrors({});
-  }, [isOpen, setErrors]);
+    if (isOpen) {
+        setSearchTerm(formData.provider || '');
+        setErrors({});
+    }
+  }, [isOpen, formData.provider, setErrors]);
+
+  // Handle clicking outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+            setIsDropdownOpen(false);
+        }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (!isOpen) return null;
 
   const isCancelled = formData.type === 'Cancelled';
+
+  // Filter the list based on typing
+  const filteredProviders = PROVIDERS.filter(p => 
+    p.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleProviderSelect = (provider) => {
+      setFormData({ ...formData, provider: provider });
+      setSearchTerm(provider);
+      setIsDropdownOpen(false);
+      setErrors({ ...errors, provider: false, providerDuplicate: false, providerInvalid: false });
+  };
 
   const validateAndConfirm = () => {
     const newErrors = {};
     let hasError = false;
 
     // 1. Required Checks
-    if (!formData.provider) { newErrors.provider = true; hasError = true; }
+    if (!formData.provider) { 
+        newErrors.provider = true; 
+        hasError = true; 
+    } else if (!PROVIDERS.includes(formData.provider)) {
+        // --- NEW: STRICT VALIDATION ---
+        // If the typed provider is NOT in the list, block it.
+        newErrors.providerInvalid = true;
+        hasError = true;
+    }
     
     // Redmine is NOT required for Cancelled
     if (!isCancelled && !formData.redmineLink) { newErrors.redmineLink = true; hasError = true; }
@@ -62,7 +111,6 @@ const EntryModal = ({
             hasError = true;
         }
 
-        // Only check ticket duplicate if it's not cancelled (since cancelled has no ticket)
         if (!isCancelled && newTicket.length > 0) {
             const duplicateTicket = otherMaintenances.some(m => {
                 const mTicket = m.redmine_ticket ? m.redmine_ticket.toString() : '';
@@ -107,10 +155,8 @@ const EntryModal = ({
 
   const generateScript = (part) => {
     const { provider, type, startTime, endTime, isUntilFurtherNotice } = formData;
-    
-    // --- EMPTY SCRIPT IF CANCELLED OR NOT FILLED ---
     if (type === 'Cancelled') return "";
-    if (!provider || !startTime) return ""; // Wait for input
+    if (!provider || !startTime) return ""; 
     
     const dStart = startTime.format('YYYY-MM-DD');
     const tStart = startTime.format('HH:mm');
@@ -125,7 +171,6 @@ const EntryModal = ({
         return `Hello there\nPlease be informed that【${provider}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice.the game lobby will closed during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
       }
     } else { 
-      // Urgent
       if (!isUntilFurtherNotice) {
         if (part === 'title') return `【${provider}】【Urgent Maintenance】on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
         return `Hello there\nPlease be informed that【${provider}】 is going urgent maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8) , the game lobby will closed during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
@@ -150,20 +195,51 @@ const EntryModal = ({
         <div className="flex flex-1 overflow-hidden">
           <div className="w-1/2 p-6 space-y-5 border-r border-gray-100 overflow-y-auto">
             
-            {/* Provider */}
-            <div>
+            {/* --- SEARCHABLE PROVIDER INPUT --- */}
+            <div ref={dropdownRef} className="relative">
               <div className="flex justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-gray-500">Provider *</label>
-                  {errors.providerDuplicate && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1"><AlertCircle size={10}/> Already exists for this date</span>}
+                  {errors.providerDuplicate && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1"><AlertCircle size={10}/> Already exists</span>}
+                  {errors.providerInvalid && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1"><AlertCircle size={10}/> Invalid Provider</span>}
               </div>
-              <select 
-                className={inputStyle(errors.provider || errors.providerDuplicate)}
-                value={formData.provider}
-                onChange={(e) => { setFormData({...formData, provider: e.target.value}); setErrors({...errors, provider: false, providerDuplicate: false}); }}
-              >
-                <option value="" disabled>Select Provider...</option>
-                {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
+              
+              <div className="relative">
+                  <input
+                    type="text"
+                    className={`${inputStyle(errors.provider || errors.providerDuplicate || errors.providerInvalid)} pr-8`}
+                    placeholder="Search or Select Provider..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setFormData({ ...formData, provider: e.target.value });
+                        if(!isDropdownOpen) setIsDropdownOpen(true);
+                        setErrors({ ...errors, provider: false, providerDuplicate: false, providerInvalid: false });
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                  />
+                  <div className="absolute right-2.5 top-2.5 text-gray-400 pointer-events-none">
+                      {isDropdownOpen ? <Search size={14} /> : <ChevronDown size={14} />}
+                  </div>
+              </div>
+
+              {/* DROPDOWN LIST */}
+              {isDropdownOpen && (
+                  <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-48 overflow-y-auto">
+                      {filteredProviders.length > 0 ? (
+                          filteredProviders.map((p) => (
+                              <li 
+                                  key={p} 
+                                  className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer font-medium"
+                                  onClick={() => handleProviderSelect(p)}
+                              >
+                                  {p}
+                              </li>
+                          ))
+                      ) : (
+                          <li className="px-3 py-2 text-sm text-gray-400 italic">No matches found</li>
+                      )}
+                  </ul>
+              )}
             </div>
 
             {/* Redmine - HIDDEN IF CANCELLED */}
@@ -197,7 +273,6 @@ const EntryModal = ({
                         className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-sm px-3 py-2 outline-none focus:border-black" 
                         value={formData.type} 
                         onChange={(e) => {
-                            // If switching TO Cancelled, clear redmine/end time errors
                             const newType = e.target.value;
                             setFormData({...formData, type: newType});
                             if(newType === 'Cancelled') setErrors({});

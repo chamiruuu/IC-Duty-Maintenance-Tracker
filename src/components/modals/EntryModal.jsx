@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
+// --- CHANGED: Added DateTimePicker and renderTimeViewClock ---
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { renderTimeViewClock } from '@mui/x-date-pickers/timeViewRenderers';
+// -------------------------------------------------------------
 import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search } from 'lucide-react';
 import CopyButton from '../CopyButton';
 import dayjs from 'dayjs';
@@ -299,7 +302,7 @@ const EntryModal = ({
 
             {/* TIME INPUTS: Conditionally Rendered */}
             {isCancelled ? (
-                // CANCELLED MODE: Only Date, No Time
+                // CANCELLED MODE: Only Date (DatePicker), No Time
                 <div>
                     <label className="block text-xs font-semibold mb-1.5 text-gray-500">Date of Cancellation *</label>
                     <DatePicker
@@ -310,44 +313,53 @@ const EntryModal = ({
                     />
                 </div>
             ) : (
-                // NORMAL MODE: Start & End Time
+                // NORMAL MODE: Start & End Time (DateTimePicker with Clock)
                 <>
                     <div>
-                    <label className="block text-xs font-semibold mb-1.5 text-gray-500">Start Time (UTC+8) *</label>
-                    <div className="grid grid-cols-2 gap-2">
-                        <DatePicker
-                        value={formData.startTime}
-                        onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }}
-                        format="YYYY-MM-DD"
-                        slotProps={{ textField: { size: 'small', className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime } }}
+                        <label className="block text-xs font-semibold mb-1.5 text-gray-500">Start Time (UTC+8) *</label>
+                        <DateTimePicker
+                            value={formData.startTime}
+                            onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }}
+                            // --- ENABLE CLOCK VIEW ---
+                            viewRenderers={{
+                                hours: renderTimeViewClock,
+                                minutes: renderTimeViewClock,
+                                seconds: renderTimeViewClock,
+                            }}
+                            ampm={false}
+                            slotProps={{ 
+                                textField: { 
+                                    size: 'small', 
+                                    fullWidth: true,
+                                    className: errors.startTime ? 'bg-red-50' : '', 
+                                    error: !!errors.startTime 
+                                } 
+                            }}
                         />
-                        <TimePicker
-                        value={formData.startTime}
-                        onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false}); }}
-                        ampm={false}
-                        slotProps={{ textField: { size: 'small', className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime } }}
-                        />
-                    </div>
                     </div>
 
-                    <div>
-                    <label className="block text-xs font-semibold mb-1.5 text-gray-500">End Time (UTC+8) *</label>
-                    <div className="grid grid-cols-2 gap-2">
-                        <DatePicker
-                        value={formData.endTime}
-                        onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }}
-                        disabled={formData.isUntilFurtherNotice}
-                        format="YYYY-MM-DD"
-                        slotProps={{ textField: { size: 'small', className: errors.endTime ? 'bg-red-50' : '', error: !!errors.endTime } }}
+                    <div className={formData.isUntilFurtherNotice ? 'opacity-50 pointer-events-none' : ''}>
+                        <label className="block text-xs font-semibold mb-1.5 text-gray-500">End Time (UTC+8) *</label>
+                        <DateTimePicker
+                            value={formData.endTime}
+                            onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }}
+                            disabled={formData.isUntilFurtherNotice}
+                            // --- ENABLE CLOCK VIEW ---
+                            viewRenderers={{
+                                hours: renderTimeViewClock,
+                                minutes: renderTimeViewClock,
+                                seconds: renderTimeViewClock,
+                            }}
+                            ampm={false}
+                            slotProps={{ 
+                                textField: { 
+                                    size: 'small', 
+                                    fullWidth: true,
+                                    className: errors.endTime ? 'bg-red-50' : '', 
+                                    error: !!errors.endTime 
+                                } 
+                            }}
                         />
-                        <TimePicker
-                        value={formData.endTime}
-                        onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }}
-                        disabled={formData.isUntilFurtherNotice}
-                        ampm={false}
-                        slotProps={{ textField: { size: 'small', className: errors.endTime ? 'bg-red-50' : '', error: !!errors.endTime } }}
-                        />
-                    </div>
                     </div>
                 </>
             )}

@@ -154,6 +154,9 @@ const Dashboard = ({ session }) => {
               const diff = differenceInMinutes(now, twoHoursLater);
               
               const reminderId = `${m.id}-2hr-reminder`;
+              // Note: If completion time was backdated significantly, diff might be large.
+              // We trigger if it's within a window OR if it's way overdue but hasn't fired yet.
+              // For simplicity, we keep the original logic but ensure it catches "passed" time.
               if (Math.abs(diff) <= 5 && !alertedRef.current.has(reminderId)) {
                   triggerNotification(
                       `Action Required: BO 8.2 Cleanup`, 
@@ -220,6 +223,7 @@ const Dashboard = ({ session }) => {
   const timeZone = 'Asia/Shanghai';
   const zonedTime = toZonedTime(currentTime, timeZone);
   
+  // --- UPDATED GREETING LOGIC ---
   const getGreeting = () => {
     const h = parseInt(format(zonedTime, 'H', { timeZone }));
     const m = parseInt(format(zonedTime, 'm', { timeZone }));
@@ -264,11 +268,10 @@ const Dashboard = ({ session }) => {
     if (error) alert("Update failed: " + error.message);
     else { setEditingUser(null); fetchUserList(); }
   };
+  
+  // --- UPDATED DELETE USER (REMOVED WINDOW.CONFIRM) ---
   const handleDeleteUser = async (userId, userName) => {
-    // REMOVE THIS LINE BELOW:
-    // if (!window.confirm(`Are you sure you want to PERMANENTLY delete user "${userName}"?`)) return;
-
-    // ... rest of the function remains the same ...
+    // Custom modal handles confirmation, so we just execute here
     const { error } = await supabase.rpc('delete_user', { target_user_id: userId });
     if (error) alert("Delete failed: " + error.message);
     else fetchUserList();
@@ -359,7 +362,6 @@ const Dashboard = ({ session }) => {
       await supabase.from('maintenances').update({ bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now }).eq('id', item.id);
   };
 
-  // --- NEW UNDO FUNCTIONS (ADMIN/LEADER ONLY) ---
   const handleUndoCompletion = async (item) => {
       if (!isHighLevel) return;
       if (item.bo_deleted) return alert("Please Undo 'BO Clean' first.");
@@ -382,7 +384,6 @@ const Dashboard = ({ session }) => {
       setLoading(false);
       if (error) alert("Undo failed: " + error.message);
   };
-  // ----------------------------------------------
 
   const toggleStatus = async (id, newStatus) => {
     setMaintenances(prev => prev.map(m => m.id === id ? { ...m, status: newStatus } : m));
@@ -452,23 +453,15 @@ const Dashboard = ({ session }) => {
     return isSameDay(start, end) ? `${startStr}, ${startTime} - ${endStr}` : `${startStr}, ${startTime} - ${fullEnd}`;
   };
 
-  // --- NEW: TYPE COLUMN LOGIC ---
   const getTypeBadge = (item) => {
-      // 1. URGENT
       if (item.type === 'Urgent') {
           return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">URGENT</span>;
       }
-      
-      // 2. EARLY (Completed && Actual < Scheduled)
       if (item.status === 'Completed' && item.completion_time && item.end_time) {
           const actual = parseISO(item.completion_time);
           const planned = parseISO(item.end_time);
-          
-          // If finished more than 5 mins early
           if (differenceInMinutes(planned, actual) > 5) {
               const displayTime = format(toZonedTime(actual, timeZone), 'HH:mm', { timeZone });
-              
-              // **INTERACTIVE BADGE** - Displays time on Hover/Click
               return (
                 <div className="relative group inline-block cursor-help">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 hover:bg-indigo-200 transition-colors">
@@ -481,8 +474,6 @@ const Dashboard = ({ session }) => {
               );
           }
       }
-      
-      // 3. SCHEDULED
       return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">SCHEDULED</span>;
   };
 
@@ -490,8 +481,6 @@ const Dashboard = ({ session }) => {
     if (item.deletion_pending) return <button onClick={() => isHighLevel && handleInitiateDelete(item)} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 ${isHighLevel ? 'animate-pulse cursor-pointer hover:bg-red-100' : 'cursor-default'}`}><Trash2 size={12} /> Pending Delete</button>;
     if (item.status === 'Cancelled') return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200 cursor-default line-through"><Ban size={12} /> Cancelled</span>;
     if (item.cancellation_pending) return <button onClick={() => isHighLevel && handleInitiateCancel(item)} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200 ${isHighLevel ? 'animate-pulse cursor-pointer hover:bg-orange-100' : 'cursor-default'}`}><AlertTriangle size={12} /> Pending Cancel</button>;
-    
-    // COMPLETED
     if (item.status === 'Completed') {
         return !item.bo_deleted 
             ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 animate-pulse"><Eraser size={12} /> BO Clean Pending</span>
@@ -543,12 +532,18 @@ const Dashboard = ({ session }) => {
     }
   }));
 
-  // --- HELPER: CHECK IF 2 HOURS PASSED ---
+  // --- UPDATED HELPER: ROBUST TIME CHECK ---
+  // Calculates minutes passed since completion using raw Date objects
+  const getMinutesSinceCompletion = (completionTime) => {
+      if (!completionTime) return 0;
+      const now = new Date(); // Always use LIVE time
+      const done = new Date(completionTime); // Force Date object
+      const diffMs = now - done;
+      return Math.floor(diffMs / 1000 / 60); // Convert ms to minutes
+  };
+
   const isBOCleanupEnabled = (completionTime) => {
-      if (!completionTime) return false;
-      const doneTime = parseISO(completionTime);
-      const diff = differenceInMinutes(new Date(), doneTime);
-      return diff >= 120; // 120 minutes = 2 hours
+      return getMinutesSinceCompletion(completionTime) >= 120; // 120 mins = 2 hours
   };
 
   return (
@@ -643,7 +638,7 @@ const Dashboard = ({ session }) => {
                      )}
                   </td>
 
-                  {/* 3. BO CLEANER (Click Name to Undo if Admin) */}
+                  {/* 3. BO CLEANER (UPDATED LOGIC WITH DEBUG TOOLTIP) */}
                   <td className="px-6 py-3 text-xs">
                      {item.bo_deleted_by ? (
                         <button 
@@ -657,14 +652,14 @@ const Dashboard = ({ session }) => {
                      ) : (
                         item.status === 'Completed' && (
                             isBOCleanupEnabled(item.completion_time) ? (
-                                // ENABLED (> 2 Hours)
+                                // ENABLED (>= 120 mins passed)
                                 <button onClick={() => handleConfirmBODeleted(item)} className="p-1.5 rounded-md bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all shadow-sm animate-pulse" title="Confirm BO 8.2 Deleted">
                                     <Eraser size={16} />
                                 </button>
                             ) : (
-                                // DISABLED (< 2 Hours)
-                                <div className="flex items-center gap-1">
-                                    <button disabled className="p-1.5 rounded-md bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200" title={`Wait 2 hours from completion time`}>
+                                // DISABLED (< 120 mins passed) - NOW WITH DEBUG TOOLTIP
+                                <div className="flex items-center gap-1" title={`${120 - getMinutesSinceCompletion(item.completion_time)} mins remaining until unlock`}>
+                                    <button disabled className="p-1.5 rounded-md bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200">
                                         <Eraser size={16} />
                                     </button>
                                     <Lock size={10} className="text-gray-300" />

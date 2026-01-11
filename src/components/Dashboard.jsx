@@ -35,6 +35,7 @@ import CancellationModal from './modals/CancellationModal';
 import CancelRequestModal from './modals/CancelRequestModal'; 
 import DeleteRequestModal from './modals/DeleteRequestModal'; 
 import FeedbackModal from './modals/FeedbackModal'; 
+import ConfirmationModal from './modals/ConfirmationModal';
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/"; 
 
@@ -78,6 +79,8 @@ const Dashboard = ({ session }) => {
   const [isCancelRequestModalOpen, setIsCancelRequestModalOpen] = useState(false); 
   const [isDeleteRequestModalOpen, setIsDeleteRequestModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false); 
+  
+  const [actionConfig, setActionConfig] = useState(null);
   
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('pending'); 
@@ -256,6 +259,60 @@ const Dashboard = ({ session }) => {
     setTimeout(() => removeNotification(id), 20000);
   };
   const removeNotification = (id) => setNotifications(prev => prev.filter(n => n.id !== id));
+
+  // --- MASTER ACTION EXECUTOR ---
+  const executeAction = async (actionType, payload) => {
+    try {
+      setLoading(true);
+      let error = null;
+
+      if (actionType === 'OVERRIDE_PENDING') {
+        const { itemId } = payload;
+        await toggleStatus(itemId, 'Upcoming');
+      } 
+      else if (actionType === 'CONFIRM_BO_DELETE') {
+        const { item } = payload;
+        const deleterName = userProfile.work_name || 'User';
+        const now = new Date().toISOString();
+        setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now } : m));
+        const { error: err } = await supabase.from('maintenances').update({ bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now }).eq('id', item.id);
+        error = err;
+        if (!error) {
+          triggerNotification('Success', `BO 8.2 cleanup confirmed for ${item.provider}.`, 'success');
+        }
+      } 
+      else if (actionType === 'UNDO_COMPLETION') {
+        const { item } = payload;
+        setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, status: 'Upcoming', completion_time: null, completed_by: null } : m));
+        const { error: err } = await supabase.from('maintenances').update({ status: 'Upcoming', completion_time: null, completed_by: null }).eq('id', item.id);
+        error = err;
+        if (!error) {
+          triggerNotification('Success', `Completion undone for ${item.provider}. Status reverted to Pending.`, 'success');
+        }
+      } 
+      else if (actionType === 'UNDO_BO_CLEAN') {
+        const { item } = payload;
+        setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, bo_deleted: false, bo_deleted_by: null, bo_deleted_at: null } : m));
+        const { error: err } = await supabase.from('maintenances').update({ bo_deleted: false, bo_deleted_by: null, bo_deleted_at: null }).eq('id', item.id);
+        error = err;
+        if (!error) {
+          triggerNotification('Success', `BO 8.2 cleanup undone for ${item.provider}. Please clean again.`, 'success');
+        }
+      }
+
+      if (error) {
+        triggerNotification('Error', error.message || 'An error occurred.', 'error');
+      }
+
+      setActionConfig(null);
+    } catch (err) {
+      triggerNotification('Error', err.message || 'An unexpected error occurred.', 'error');
+      setActionConfig(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const timeZone = 'Asia/Shanghai';
   const zonedTime = toZonedTime(currentTime, timeZone);
   
@@ -282,27 +339,41 @@ const Dashboard = ({ session }) => {
   };
 
   const handleCreateUser = async () => {
-    if (!userForm.email || !userForm.workName || !userForm.password) return alert("Please fill all fields.");
+    if (!userForm.email || !userForm.workName || !userForm.password) {
+      triggerNotification('Validation Error', 'Please fill all required fields.', 'error');
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.rpc('create_new_user', { new_email: userForm.email, new_password: userForm.password, new_work_name: userForm.workName, new_role: userForm.role });
     setLoading(false);
-    if (error) alert("Error: " + error.message);
-    else {
+    if (error) {
+      triggerNotification('Error', error.message, 'error');
+    } else {
       setNewUserCredentials({ email: userForm.email, password: userForm.password, role: userForm.role, workName: userForm.workName });
       setUserForm({ email: '', workName: '', password: '', role: 'normal' });
       fetchUserList();
+      triggerNotification('Success', `User ${userForm.email} created successfully.`, 'success');
     }
   };
   const handleUpdateUser = async (userId, updates) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
-    if (error) alert("Update failed: " + error.message);
-    else { setEditingUser(null); fetchUserList(); }
+    if (error) {
+      triggerNotification('Error', `Update failed: ${error.message}`, 'error');
+    } else {
+      setEditingUser(null);
+      fetchUserList();
+      triggerNotification('Success', 'User updated successfully.', 'success');
+    }
   };
   
   const handleDeleteUser = async (userId, userName) => {
     const { error } = await supabase.rpc('delete_user', { target_user_id: userId });
-    if (error) alert("Delete failed: " + error.message);
-    else fetchUserList();
+    if (error) {
+      triggerNotification('Error', `Delete failed: ${error.message}`, 'error');
+    } else {
+      fetchUserList();
+      triggerNotification('Success', `User ${userName} deleted successfully.`, 'success');
+    }
   };
 
   const fetchMaintenances = async () => {
@@ -365,7 +436,15 @@ const Dashboard = ({ session }) => {
   const initiateCompletion = (item) => {
     if (item.status === 'Completed' || item.status === 'Cancelled') {
       if(item.status === 'Completed' && !item.bo_deleted) return; 
-      if (isHighLevel && window.confirm("Override: Mark as Pending?")) toggleStatus(item.id, 'Upcoming');
+      if (isHighLevel) {
+        setActionConfig({
+          type: 'OVERRIDE_PENDING',
+          title: 'Override Completion Status',
+          message: `Mark ${item.provider} as Pending again?`,
+          confirmText: 'Override',
+          payload: { itemId: item.id }
+        });
+      }
     } else {
       setCompletingItem(item);
       setSopChecks({ transfer: false, gameOpen: false, redmineUpdate: false });
@@ -382,35 +461,40 @@ const Dashboard = ({ session }) => {
     setCompletingItem(null);
   };
 
-  const handleConfirmBODeleted = async (item) => {
-      if(!window.confirm(`Confirm BO 8.2 Announcement has been DELETED for ${item.provider}?`)) return;
-      const deleterName = userProfile.work_name || 'User';
-      const now = new Date().toISOString();
-      setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now } : m));
-      await supabase.from('maintenances').update({ bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now }).eq('id', item.id);
+  const handleConfirmBODeleted = (item) => {
+    setActionConfig({
+      type: 'CONFIRM_BO_DELETE',
+      title: 'Confirm BO 8.2 Cleanup',
+      message: `Confirm BO 8.2 Announcement has been DELETED for ${item.provider}?`,
+      confirmText: 'Confirm',
+      payload: { item }
+    });
   };
 
-  const handleUndoCompletion = async (item) => {
-      if (!isHighLevel) return;
-      if (item.bo_deleted) return alert("Please Undo 'BO Clean' first.");
-      if (!window.confirm(`Undo Completion for ${item.provider}? This will revert it to 'Pending'.`)) return;
-
-      setLoading(true);
-      setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, status: 'Upcoming', completion_time: null, completed_by: null } : m));
-      const { error } = await supabase.from('maintenances').update({ status: 'Upcoming', completion_time: null, completed_by: null }).eq('id', item.id);
-      setLoading(false);
-      if (error) alert("Undo failed: " + error.message);
+  const handleUndoCompletion = (item) => {
+    if (!isHighLevel) return;
+    if (item.bo_deleted) {
+      triggerNotification('Warning', `Please Undo 'BO Clean' first.`, 'warning');
+      return;
+    }
+    setActionConfig({
+      type: 'UNDO_COMPLETION',
+      title: 'Undo Completion',
+      message: `Undo Completion for ${item.provider}? This will revert it to 'Pending'.`,
+      confirmText: 'Undo',
+      payload: { item }
+    });
   };
 
-  const handleUndoBOClean = async (item) => {
-      if (!isHighLevel) return;
-      if (!window.confirm(`Undo BO 8.2 Clean for ${item.provider}? This will require cleaning again.`)) return;
-
-      setLoading(true);
-      setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, bo_deleted: false, bo_deleted_by: null, bo_deleted_at: null } : m));
-      const { error } = await supabase.from('maintenances').update({ bo_deleted: false, bo_deleted_by: null, bo_deleted_at: null }).eq('id', item.id);
-      setLoading(false);
-      if (error) alert("Undo failed: " + error.message);
+  const handleUndoBOClean = (item) => {
+    if (!isHighLevel) return;
+    setActionConfig({
+      type: 'UNDO_BO_CLEAN',
+      title: 'Undo BO 8.2 Cleanup',
+      message: `Undo BO 8.2 Clean for ${item.provider}? This will require cleaning again.`,
+      confirmText: 'Undo',
+      payload: { item }
+    });
   };
 
   const toggleStatus = async (id, newStatus) => {
@@ -462,8 +546,15 @@ const Dashboard = ({ session }) => {
     if (editingId) ({ error } = await supabase.from('maintenances').update(payload).eq('id', editingId));
     else ({ error } = await supabase.from('maintenances').insert([{ ...payload, status: finalStatus }]));
     setLoading(false);
-    if (!error) { setIsModalOpen(false); setEditingId(null); setErrors({}); fetchMaintenances(); }
-    else alert(error.message);
+    if (!error) { 
+      setIsModalOpen(false); 
+      setEditingId(null); 
+      setErrors({}); 
+      fetchMaintenances();
+      triggerNotification('Success', `Maintenance entry ${editingId ? 'updated' : 'created'} successfully.`, 'success');
+    } else {
+      triggerNotification('Error', error.message, 'error');
+    }
   };
 
   const getRedmineDisplayId = (ticketNum) => ticketNum ? `CS-${ticketNum.toString().replace(/\D/g, '')}` : '-';
@@ -740,6 +831,20 @@ const Dashboard = ({ session }) => {
         <CancelRequestModal isOpen={isCancelRequestModalOpen} onClose={() => setIsCancelRequestModalOpen(false)} item={cancellingItem} onConfirm={handleRequestCancelConfirm} loading={loading} />
         <DeleteRequestModal isOpen={isDeleteRequestModalOpen} onClose={() => setIsDeleteRequestModalOpen(false)} item={deleteRequestId} onConfirm={handleRequestDeleteConfirm} loading={loading} />
         <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} userName={userProfile.work_name || 'User'} />
+        
+        {/* --- CONFIRMATION MODAL --- */}
+        <ConfirmationModal 
+          isOpen={!!actionConfig}
+          onClose={() => setActionConfig(null)}
+          onConfirm={() => executeAction(actionConfig?.type, actionConfig?.payload)}
+          config={{
+            title: actionConfig?.title || '',
+            message: actionConfig?.message || '',
+            type: actionConfig?.type?.includes('UNDO') ? 'warning' : actionConfig?.type === 'CONFIRM_BO_DELETE' ? 'danger' : 'info',
+            confirmText: actionConfig?.confirmText || 'Confirm'
+          }}
+          loading={loading}
+        />
       </div>
     </LocalizationProvider>
   );

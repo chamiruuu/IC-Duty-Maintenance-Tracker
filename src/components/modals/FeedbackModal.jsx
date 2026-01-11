@@ -45,8 +45,10 @@ const FeedbackModal = ({ isOpen, onClose, userName }) => {
         // 3. Log Exact Error
         console.error("❌ FAILED TO SEND:", error);
         
-        // Show detailed alert for debugging
-        alert(`Failed to send. Error: ${JSON.stringify(error)}`);
+        // Error handling - parent should provide triggerNotification
+        if (window.triggerNotification) {
+            window.triggerNotification('Error', `Failed to send feedback: ${error.message || 'Unknown error'}`, 'error');
+        }
     } finally {
         setLoading(false);
     }

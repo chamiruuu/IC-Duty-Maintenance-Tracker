@@ -582,19 +582,7 @@ const Dashboard = ({ session }) => {
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 w-12 text-center">#</th>
-                <th className="px-6 py-3">Redmine No</th>
-                <th className="px-6 py-3">Provider</th>
-                <th className="px-6 py-3">Type</th> {/* NEW COLUMN */}
-                <th className="px-6 py-3">Schedule (UTC+8)</th>
-                <th className="px-6 py-3">Status</th>
-                {/* --- RENAMED & RESTRUCTURED COLUMNS --- */}
-                <th className="px-6 py-3 text-left">Recorder</th>
-                <th className="px-6 py-3 text-left">Completer</th>
-                <th className="px-6 py-3 text-left">BO Cleaner</th>
-                {/* --------------------------------------- */}
-                <th className="px-6 py-3 text-center">Verified</th>
-                <th className="px-6 py-3 text-right">Actions</th>
+                <th className="px-6 py-3 w-12 text-center">#</th><th className="px-6 py-3">Redmine No</th><th className="px-6 py-3">Provider</th><th className="px-6 py-3">Type</th><th className="px-6 py-3">Schedule (UTC+8)</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-left">Recorder</th><th className="px-6 py-3 text-left">Completer</th><th className="px-6 py-3 text-left">BO Cleaner</th><th className="px-6 py-3 text-center">Verified</th><th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-// --- CHANGED: Added DateTimePicker and renderTimeViewClock ---
+// --- CHANGED: Switched back to Desktop DateTimePicker ---
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { renderTimeViewClock } from '@mui/x-date-pickers/timeViewRenderers';
-// -------------------------------------------------------------
+// --------------------------------------------------------
 import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search } from 'lucide-react';
 import CopyButton from '../CopyButton';
 import dayjs from 'dayjs';
@@ -80,8 +79,6 @@ const EntryModal = ({
         newErrors.provider = true; 
         hasError = true; 
     } else if (!PROVIDERS.includes(formData.provider)) {
-        // --- NEW: STRICT VALIDATION ---
-        // If the typed provider is NOT in the list, block it.
         newErrors.providerInvalid = true;
         hasError = true;
     }
@@ -302,7 +299,7 @@ const EntryModal = ({
 
             {/* TIME INPUTS: Conditionally Rendered */}
             {isCancelled ? (
-                // CANCELLED MODE: Only Date (DatePicker), No Time
+                // CANCELLED MODE: Only Date, No Time
                 <div>
                     <label className="block text-xs font-semibold mb-1.5 text-gray-500">Date of Cancellation *</label>
                     <DatePicker
@@ -313,19 +310,15 @@ const EntryModal = ({
                     />
                 </div>
             ) : (
-                // NORMAL MODE: Start & End Time (DateTimePicker with Clock)
+                // NORMAL MODE: Start & End Time
                 <>
                     <div>
                         <label className="block text-xs font-semibold mb-1.5 text-gray-500">Start Time (UTC+8) *</label>
+                        {/* --- CHANGED: Desktop DateTimePicker with 1-min steps --- */}
                         <DateTimePicker
                             value={formData.startTime}
                             onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }}
-                            // --- ENABLE CLOCK VIEW ---
-                            viewRenderers={{
-                                hours: renderTimeViewClock,
-                                minutes: renderTimeViewClock,
-                                seconds: renderTimeViewClock,
-                            }}
+                            timeSteps={{ minutes: 1 }}
                             ampm={false}
                             slotProps={{ 
                                 textField: { 
@@ -340,16 +333,12 @@ const EntryModal = ({
 
                     <div className={formData.isUntilFurtherNotice ? 'opacity-50 pointer-events-none' : ''}>
                         <label className="block text-xs font-semibold mb-1.5 text-gray-500">End Time (UTC+8) *</label>
+                        {/* --- CHANGED: Desktop DateTimePicker with 1-min steps --- */}
                         <DateTimePicker
                             value={formData.endTime}
                             onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }}
                             disabled={formData.isUntilFurtherNotice}
-                            // --- ENABLE CLOCK VIEW ---
-                            viewRenderers={{
-                                hours: renderTimeViewClock,
-                                minutes: renderTimeViewClock,
-                                seconds: renderTimeViewClock,
-                            }}
+                            timeSteps={{ minutes: 1 }}
                             ampm={false}
                             slotProps={{ 
                                 textField: { 

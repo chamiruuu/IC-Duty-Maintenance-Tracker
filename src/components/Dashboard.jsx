@@ -21,7 +21,7 @@ import {
   Gamepad2, User, CheckSquare, History as HistoryIcon, LayoutList,
   ShieldCheck, Shield, Users, LogOut, Check, Bell, Zap,
   PlayCircle, AlertTriangle, Timer, CheckCircle2, Ban,
-  MessageSquarePlus, Eraser, Lock, Info, Activity, Calendar // <-- Added Calendar Icon
+  MessageSquarePlus, Eraser, Lock, Info, Activity, Calendar 
 } from 'lucide-react';
 
 import NotificationToast from './NotificationToast';
@@ -36,8 +36,8 @@ import CancelRequestModal from './modals/CancelRequestModal';
 import DeleteRequestModal from './modals/DeleteRequestModal'; 
 import FeedbackModal from './modals/FeedbackModal'; 
 import ConfirmationModal from './modals/ConfirmationModal';
-import ScheduleModal from './modals/ScheduleModal'; // <-- Added ScheduleModal
-import { getChecklistForDate } from '../lib/scheduleRules'; // <-- Added Logic
+import ScheduleModal from './modals/ScheduleModal'; 
+import { getChecklistForDate } from '../lib/scheduleRules'; 
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/"; 
 
@@ -70,7 +70,7 @@ const Dashboard = ({ session }) => {
   const [activeUsers, setActiveUsers] = useState([]);
   const [isPresenceMenuOpen, setIsPresenceMenuOpen] = useState(false);
 
-  // --- NEW: SCHEDULE STATE ---
+  // --- SCHEDULE STATE ---
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [checklistAlerted, setChecklistAlerted] = useState(false);
 
@@ -85,6 +85,7 @@ const Dashboard = ({ session }) => {
   const [isCancelRequestModalOpen, setIsCancelRequestModalOpen] = useState(false); 
   const [isDeleteRequestModalOpen, setIsDeleteRequestModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false); 
+  const [resolutionInitialMode, setResolutionInitialMode] = useState('select');
   
   const [actionConfig, setActionConfig] = useState(null);
   
@@ -197,7 +198,7 @@ const Dashboard = ({ session }) => {
        const now = new Date(); 
        const timeZone = 'Asia/Shanghai';
        
-       // --- NEW: 9:00 AM SCHEDULE CHECK ---
+       // --- 9:00 AM SCHEDULE CHECK ---
        const nowZoned = toZonedTime(now, timeZone);
        const currentHour = parseInt(format(nowZoned, 'H', { timeZone }));
        
@@ -215,11 +216,10 @@ const Dashboard = ({ session }) => {
                );
                setChecklistAlerted(true);
            } else {
-               // If nothing missing, mark alerted so we don't check again today
                setChecklistAlerted(true);
            }
        }
-       // Reset alert flag next day (e.g., at midnight or 1 AM)
+       // Reset alert flag next day
        if (currentHour === 1 && checklistAlerted) {
            setChecklistAlerted(false);
        }
@@ -250,9 +250,22 @@ const Dashboard = ({ session }) => {
           const minutesLeft = differenceInMinutes(endDate, now); 
           const minutesPast = differenceInMinutes(now, endDate); 
 
+          // ---------------------------------------------------------
+          // UPDATED: 30-Minute Check-In Alert (The Main SOP Trigger)
+          // ---------------------------------------------------------
           const alertId30 = `${m.id}-30min-warn`;
           if (minutesLeft <= 30 && minutesLeft > 25 && !alertedRef.current.has(alertId30)) {
-                triggerNotification(`Maintenance Interval Alert`, `【${m.provider}】 concludes in 30 minutes.`, 'warning');
+                const endStr = m.end_time ? format(parseISO(m.end_time), 'HH:mm') : 'the scheduled time';
+                
+                // The Official 30-min Script
+                const script = `Hi Team, This is ${userProfile.work_name}. May we confirm if the maintenance end on time ${endStr}? Thank You.`;
+                
+                triggerNotification(
+                    `30-Min Check: ${m.provider}`, 
+                    `Time to confirm status. Click to copy script.`, 
+                    'warning', 
+                    script // <--- Passes script to copy
+                );
                 alertedRef.current.add(alertId30);
           }
 
@@ -294,7 +307,7 @@ const Dashboard = ({ session }) => {
     setNotifications(prev => [...prev, { id, title, message, type, copyText, maintenanceId }]);
     setNotificationHistory(prev => [{ id, title, message, type, timestamp: new Date(), copyText }, ...prev]);
     
-    // 2. ONLY send Browser Notification if it is NOT a success message (e.g. Warnings, Errors, Reminders)
+    // 2. ONLY send Browser Notification if it is NOT a success message
     if (type !== 'success' && "Notification" in window && Notification.permission === "granted") {
         new Notification(title, { body: message });
     }
@@ -444,6 +457,29 @@ const Dashboard = ({ session }) => {
     await supabase.from('maintenances').delete().eq('id', deletingId);
     setLoading(false); setIsDeleteModalOpen(false); setDeletingId(null);
   };
+  
+  const handleRejectDelete = async () => {
+    if (!deletingId) return;
+    setLoading(true);
+    
+    // Set deletion_pending to false (Keep the entry)
+    const { error } = await supabase
+      .from('maintenances')
+      .update({ deletion_pending: false })
+      .eq('id', deletingId);
+      
+    setLoading(false);
+    
+    if (!error) {
+      triggerNotification('Success', 'Delete request rejected. Entry restored.', 'success');
+      setIsDeleteModalOpen(false);
+      setDeletingId(null);
+      fetchMaintenances();
+    } else {
+      triggerNotification('Error', error.message, 'error');
+    }
+  };
+
   const handleExtendMaintenance = async (id, newEndTimeDayJs, isNotice) => {
     setLoading(true);
     const payload = { is_until_further_notice: isNotice, end_time: isNotice ? null : newEndTimeDayJs.toISOString() };
@@ -465,7 +501,11 @@ const Dashboard = ({ session }) => {
     setLoading(false);
     if (!error) { setIsCancellationModalOpen(false); setCancellingItem(null); fetchMaintenances(); }
   };
-  const handleOpenResolution = (item) => { setResolvingItem(item); setIsResolutionModalOpen(true); };
+  const handleOpenResolution = (item, mode = 'select') => { 
+      setResolvingItem(item); 
+      setResolutionInitialMode(mode); // Sets 'select' or 'extend'
+      setIsResolutionModalOpen(true); 
+  };
   const handleProceedToCompletion = () => { setIsResolutionModalOpen(false); initiateCompletion(resolvingItem); };
   
   const toggleVerified = async (id, currentStatus) => {
@@ -826,11 +866,11 @@ const Dashboard = ({ session }) => {
                   <td className="px-6 py-3">{getStatusBadge(item)}</td>
 
                   <td className="px-6 py-3 text-xs text-gray-600 font-medium">
-                     <div className="flex items-center gap-1.5"><User size={12} className="text-gray-400" /> {item.recorder}</div>
+                      <div className="flex items-center gap-1.5"><User size={12} className="text-gray-400" /> {item.recorder}</div>
                   </td>
 
                   <td className="px-6 py-3 text-xs">
-                     {item.status === 'Completed' ? (
+                      {item.status === 'Completed' ? (
                         <button 
                             onClick={() => handleUndoCompletion(item)}
                             disabled={!isHighLevel}
@@ -839,17 +879,17 @@ const Dashboard = ({ session }) => {
                         >
                             <CheckCircle2 size={12} /> {item.completed_by}
                         </button>
-                     ) : (
+                      ) : (
                         item.status !== 'Cancelled' && (
                             <button onClick={() => initiateCompletion(item)} className="transition-colors p-1.5 rounded-md text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 border border-transparent hover:border-emerald-200" title="Mark as Completed">
                                 <CheckSquare size={16} />
                             </button>
                         )
-                     )}
+                      )}
                   </td>
 
                   <td className="px-6 py-3 text-xs">
-                     {item.bo_deleted_by ? (
+                      {item.bo_deleted_by ? (
                         <button 
                             onClick={() => handleUndoBOClean(item)}
                             disabled={!isHighLevel}
@@ -858,7 +898,7 @@ const Dashboard = ({ session }) => {
                         >
                             <Eraser size={12} /> {item.bo_deleted_by}
                         </button>
-                     ) : (
+                      ) : (
                         item.status === 'Completed' && (
                             isBOCleanupEnabled(item.completion_time) ? (
                                 <button onClick={() => handleConfirmBODeleted(item)} className="p-1.5 rounded-md bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all shadow-sm animate-pulse" title="Confirm BO 8.2 Deleted">
@@ -873,17 +913,49 @@ const Dashboard = ({ session }) => {
                                 </div>
                             )
                         )
-                     )}
+                      )}
                   </td>
 
                   <td className="px-6 py-3 text-center"><button onClick={() => toggleVerified(item.id, item.setup_confirmed)} className={`flex items-center justify-center gap-1 mx-auto transition-all ${!isHighLevel ? 'cursor-default' : 'hover:scale-110 active:scale-95'}`} title={item.setup_confirmed ? `Verified by ${item.verified_by_name}` : "Not Verified"}>{item.setup_confirmed ? <><ShieldCheck size={18} className="text-blue-600 fill-blue-50" />{!isHighLevel && <span className="text-[10px] font-bold text-gray-500">{item.verified_by_name}</span>}</> : <Shield size={18} className="text-gray-300" />}</button></td>
                   
                   <td className="px-6 py-3 text-right">
-                     <div className="flex justify-end gap-2">
-                        <button onClick={() => handleEdit(item)} className="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Edit"><Edit2 size={15} /></button>
+                      <div className="flex justify-end gap-2">
+                        
+                        {/* --- 1. CLOCK BUTTON (For Resolution/Extension) --- */}
+                        {item.status !== 'Cancelled' && (
+                            <button 
+                                onClick={() => handleOpenResolution(item, 'extend')} 
+                                className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"
+                                title="Resolution / Extend Time"
+                            >
+                                <Clock size={15} />
+                            </button>
+                        )}
+
+                        {/* --- 2. EDIT BUTTON (Disabled if Started) --- */}
+                        {(() => {
+                            // Check current time vs start time directly
+                            const isStarted = new Date() >= new Date(item.start_time);
+                            
+                            return (
+                                <button 
+                                    onClick={() => !isStarted && handleEdit(item)} 
+                                    disabled={isStarted} 
+                                    className={`p-1.5 rounded transition-colors ${
+                                        isStarted 
+                                        ? 'text-gray-300 cursor-not-allowed' // Greyed out if started
+                                        : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                                    }`}
+                                    title={isStarted ? "Maintenance Started. Use Extension." : "Edit"}
+                                >
+                                    <Edit2 size={15} />
+                                </button>
+                            );
+                        })()}
+
                         {item.status !== 'Cancelled' && <button onClick={() => handleInitiateCancel(item)} className="text-gray-400 hover:text-orange-600 hover:bg-orange-50 p-1.5 rounded transition-colors" title="Cancel Maintenance"><Ban size={15} /></button>}
                         <button onClick={() => handleInitiateDelete(item)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Entry"><Trash2 size={15} /></button>
-                     </div>
+                      </div>
                   </td>
                 </tr>
               ))}
@@ -902,8 +974,24 @@ const Dashboard = ({ session }) => {
         <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} formData={formData} setFormData={setFormData} handleConfirm={handleConfirm} loading={loading} editingId={editingId} errors={errors} setErrors={setErrors} existingMaintenances={maintenances} />
         <CompletionModal isOpen={isCompletionModalOpen} onClose={() => setIsCompletionModalOpen(false)} onConfirm={confirmCompletion} item={completingItem} sopChecks={sopChecks} setSopChecks={setSopChecks} />
         <UserModal isOpen={isUserModalOpen} onClose={() => setIsUserModalOpen(false)} userTab={userTab} setUserTab={setUserTab} userList={userList} userForm={userForm} setUserForm={setUserForm} loading={loading} handleCreateUser={handleCreateUser} handleUpdateUser={handleUpdateUser} handleDeleteUser={handleDeleteUser} editingUser={editingUser} setEditingUser={setEditingUser} newUserCredentials={newUserCredentials} setNewUserCredentials={setNewUserCredentials} generatePassword={() => { const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"; let pass = ""; for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length)); setUserForm(prev => ({ ...prev, password: pass })); }} />
-        <DeleteModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleConfirmDelete} loading={loading} />
-        <ResolutionModal isOpen={isResolutionModalOpen} onClose={() => setIsResolutionModalOpen(false)} item={resolvingItem} onExtend={handleExtendMaintenance} onComplete={handleProceedToCompletion} loading={loading} />
+        <DeleteModal 
+            isOpen={isDeleteModalOpen} 
+            onClose={() => setIsDeleteModalOpen(false)} 
+            onConfirm={handleConfirmDelete} 
+            onReject={handleRejectDelete} 
+            loading={loading} 
+            // This checks if it is a request (so the modal knows to show the "Keep" button)
+            isDeletionRequest={maintenances.find(m => m.id === deletingId)?.deletion_pending} 
+        />
+        <ResolutionModal 
+            isOpen={isResolutionModalOpen} 
+            onClose={() => setIsResolutionModalOpen(false)} 
+            item={resolvingItem} 
+            initialMode={resolutionInitialMode}
+            onExtend={handleExtendMaintenance} 
+            onComplete={handleProceedToCompletion} 
+            loading={loading} 
+        />
         <CancellationModal isOpen={isCancellationModalOpen} onClose={() => setIsCancellationModalOpen(false)} item={cancellingItem} onConfirm={handleConfirmCancel} loading={loading} />
         <CancelRequestModal isOpen={isCancelRequestModalOpen} onClose={() => setIsCancelRequestModalOpen(false)} item={cancellingItem} onConfirm={handleRequestCancelConfirm} loading={loading} />
         <DeleteRequestModal isOpen={isDeleteRequestModalOpen} onClose={() => setIsDeleteRequestModalOpen(false)} item={deleteRequestId} onConfirm={handleRequestDeleteConfirm} loading={loading} />

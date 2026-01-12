@@ -1,9 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-// --- CHANGED: Switched back to Desktop DateTimePicker ---
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-// --------------------------------------------------------
-import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search } from 'lucide-react';
+import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search, Send, Check } from 'lucide-react';
 import CopyButton from '../CopyButton';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -12,7 +10,6 @@ import timezone from 'dayjs/plugin/timezone';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// --- FULL PROVIDER LIST ---
 const PROVIDERS = [
   "C-Sports", "I-Sports", "OPUS Sport", "SBO", "BTi", "IMSB", "WBet",
   "PA Casino", "ALLBET", "BG Casino", "DG Casino", "GP Casino", "Opus Casino",
@@ -30,20 +27,64 @@ const EntryModal = ({
   isOpen, onClose, formData, setFormData, handleConfirm, loading, editingId, errors, setErrors, existingMaintenances 
 }) => {
   
-  // --- SEARCH STATE ---
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+  
+  const [showRescheduleSop, setShowRescheduleSop] = useState(false);
+  const [rescheduleChecklist, setRescheduleChecklist] = useState({ internal: false, boSync: false });
+  
+  // Store initial times to detect changes. Using Strings for easier comparison.
+  const [initialTimes, setInitialTimes] = useState({ start: null, end: null });
 
-  // Sync searchTerm when formData loads (for Editing)
+  // --- FIX: SEPARATED INITIALIZATION EFFECT ---
+  // This runs ONLY when the modal opens or the editing ID changes.
+  // It does NOT run when formData updates (typing), preventing reset loops.
   useEffect(() => {
     if (isOpen) {
         setSearchTerm(formData.provider || '');
         setErrors({});
+        setShowRescheduleSop(false);
+        setRescheduleChecklist({ internal: false, boSync: false });
+        
+        // Capture specific initial times if editing
+        if (editingId) {
+            // Using format() instead of ISO to ignore milliseconds issues
+            const fmt = 'YYYY-MM-DD HH:mm';
+            setInitialTimes({ 
+                start: formData.startTime ? dayjs(formData.startTime).format(fmt) : null,
+                end: formData.endTime ? dayjs(formData.endTime).format(fmt) : null
+            });
+        } else {
+            setInitialTimes({ start: null, end: null });
+        }
     }
-  }, [isOpen, formData.provider, setErrors]);
+  }, [isOpen, editingId]); // Removed formData from dependencies
+  // ----------------------------------------------
 
-  // Handle clicking outside to close dropdown
+  // --- FIX: ROBUST CHANGE DETECTION ---
+  useEffect(() => {
+    if (editingId && initialTimes.start) {
+        const fmt = 'YYYY-MM-DD HH:mm';
+        const currentStart = formData.startTime ? dayjs(formData.startTime).format(fmt) : null;
+        const currentEnd = formData.endTime ? dayjs(formData.endTime).format(fmt) : null;
+        
+        // Check if times are different (String comparison)
+        const isTimeChanged = (currentStart !== initialTimes.start) || (currentEnd !== initialTimes.end);
+        
+        // Check if it is a FUTURE event (Not started yet)
+        // Ensure we compare against the INITIAL time to see if the original plan was future
+        const isFuture = dayjs().isBefore(dayjs(initialTimes.start));
+
+        if (isTimeChanged && isFuture) {
+            setShowRescheduleSop(true);
+        } else {
+            setShowRescheduleSop(false);
+        }
+    }
+  }, [formData.startTime, formData.endTime, editingId, initialTimes]);
+  // ------------------------------------
+
   useEffect(() => {
     const handleClickOutside = (event) => {
         if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -57,11 +98,7 @@ const EntryModal = ({
   if (!isOpen) return null;
 
   const isCancelled = formData.type === 'Cancelled';
-
-  // Filter the list based on typing
-  const filteredProviders = PROVIDERS.filter(p => 
-    p.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProviders = PROVIDERS.filter(p => p.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleProviderSelect = (provider) => {
       setFormData({ ...formData, provider: provider });
@@ -71,34 +108,23 @@ const EntryModal = ({
   };
 
   const validateAndConfirm = () => {
+    if (showRescheduleSop) {
+        if (!rescheduleChecklist.internal || !rescheduleChecklist.boSync) return;
+    }
+
     const newErrors = {};
     let hasError = false;
 
-    // 1. Required Checks
-    if (!formData.provider) { 
-        newErrors.provider = true; 
-        hasError = true; 
-    } else if (!PROVIDERS.includes(formData.provider)) {
-        newErrors.providerInvalid = true;
-        hasError = true;
-    }
+    if (!formData.provider) { newErrors.provider = true; hasError = true; } 
+    else if (!PROVIDERS.includes(formData.provider)) { newErrors.providerInvalid = true; hasError = true; }
     
-    // Redmine is NOT required for Cancelled
     if (!isCancelled && !formData.redmineLink) { newErrors.redmineLink = true; hasError = true; }
-    
     if (!formData.startTime) { newErrors.startTime = true; hasError = true; }
-    
-    // End Time Checks
-    if (!formData.isUntilFurtherNotice && !isCancelled && !formData.endTime) { 
-        newErrors.endTime = true; 
-        hasError = true; 
-    }
+    if (!formData.isUntilFurtherNotice && !isCancelled && !formData.endTime) { newErrors.endTime = true; hasError = true; }
 
-    // 2. Duplicate Checks
     if (existingMaintenances && !hasError && !editingId) {
         const startDay = dayjs(formData.startTime).format('YYYY-MM-DD');
         const newTicket = formData.redmineLink ? formData.redmineLink.replace(/\D/g, '') : ''; 
-
         const otherMaintenances = existingMaintenances.filter(m => m.id !== editingId);
 
         const duplicateProvider = otherMaintenances.some(m => {
@@ -106,36 +132,22 @@ const EntryModal = ({
             return (m.provider === formData.provider) && (mDay === startDay);
         });
 
-        if (duplicateProvider) {
-            newErrors.providerDuplicate = true;
-            hasError = true;
-        }
+        if (duplicateProvider) { newErrors.providerDuplicate = true; hasError = true; }
 
         if (!isCancelled && newTicket.length > 0) {
             const duplicateTicket = otherMaintenances.some(m => {
                 const mTicket = m.redmine_ticket ? m.redmine_ticket.toString() : '';
                 return mTicket === newTicket;
             });
-
-            if (duplicateTicket) {
-                newErrors.redmineDuplicate = true;
-                hasError = true;
-            }
+            if (duplicateTicket) { newErrors.redmineDuplicate = true; hasError = true; }
         }
     }
 
-    if (hasError) {
-        setErrors(newErrors);
-        return;
-    }
+    if (hasError) { setErrors(newErrors); return; }
 
-    // 3. Prepare Data
     let startString;
-    if (isCancelled) {
-        startString = dayjs(formData.startTime).format('YYYY-MM-DD 00:00:00');
-    } else {
-        startString = dayjs(formData.startTime).format('YYYY-MM-DD HH:mm:ss');
-    }
+    if (isCancelled) { startString = dayjs(formData.startTime).format('YYYY-MM-DD 00:00:00'); } 
+    else { startString = dayjs(formData.startTime).format('YYYY-MM-DD HH:mm:ss'); }
     const zonedStart = dayjs.tz(startString, "Asia/Shanghai");
     
     let zonedEnd = null;
@@ -147,29 +159,16 @@ const EntryModal = ({
     handleConfirm(zonedStart, zonedEnd);
   };
 
-  const getPreviewId = (url) => {
-    if (!url) return '';
-    const digits = url.replace(/\D/g, '');
-    return digits ? `CS-${digits}` : '';
-  };
+  const getPreviewId = (url) => { if (!url) return ''; const digits = url.replace(/\D/g, ''); return digits ? `CS-${digits}` : ''; };
 
   const generateScript = (part) => {
     const { provider, type, startTime, endTime, isUntilFurtherNotice } = formData;
-    
-    // --- NEW: CANCELLED TYPE CHECK ---
     if (type === 'Cancelled') {
-      if (part === 'title') {
-        return `${provider} Cancel Maintenance`;
-      }
-      // Return date in YYYY/MM/DD format
+      if (part === 'title') return `${provider} Cancel Maintenance`;
       if (!startTime) return "";
-      const dateFormatted = startTime.format('YYYY/MM/DD');
-      return `${dateFormatted}`;
+      return `${startTime.format('YYYY/MM/DD')}`;
     }
-    // --------------------------------
-    
     if (!provider || !startTime) return ""; 
-    
     const dStart = startTime.format('YYYY-MM-DD');
     const tStart = startTime.format('HH:mm');
     const tEnd = endTime ? endTime.format('HH:mm') : '';
@@ -193,6 +192,7 @@ const EntryModal = ({
     }
   };
 
+  const getInternalUpdateMsg = () => `Maintenance time update for ${formData.provider}, BO8.2 announcement has been updated.`;
   const inputStyle = (isError) => `w-full bg-white border text-gray-900 text-sm rounded-sm px-3 py-2 outline-none transition-all ${isError ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-black'}`;
 
   return (
@@ -207,14 +207,12 @@ const EntryModal = ({
         <div className="flex flex-1 overflow-hidden">
           <div className="w-1/2 p-6 space-y-5 border-r border-gray-100 overflow-y-auto">
             
-            {/* --- SEARCHABLE PROVIDER INPUT --- */}
             <div ref={dropdownRef} className="relative">
               <div className="flex justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-gray-500">Provider *</label>
                   {errors.providerDuplicate && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1"><AlertCircle size={10}/> Already exists</span>}
                   {errors.providerInvalid && <span className="text-[10px] text-red-600 font-bold flex items-center gap-1"><AlertCircle size={10}/> Invalid Provider</span>}
               </div>
-              
               <div className="relative">
                   <input
                     type="text"
@@ -233,19 +231,11 @@ const EntryModal = ({
                       {isDropdownOpen ? <Search size={14} /> : <ChevronDown size={14} />}
                   </div>
               </div>
-
-              {/* DROPDOWN LIST */}
               {isDropdownOpen && (
                   <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-48 overflow-y-auto">
                       {filteredProviders.length > 0 ? (
                           filteredProviders.map((p) => (
-                              <li 
-                                  key={p} 
-                                  className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer font-medium"
-                                  onClick={() => handleProviderSelect(p)}
-                              >
-                                  {p}
-                              </li>
+                              <li key={p} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer font-medium" onClick={() => handleProviderSelect(p)}>{p}</li>
                           ))
                       ) : (
                           <li className="px-3 py-2 text-sm text-gray-400 italic">No matches found</li>
@@ -254,7 +244,6 @@ const EntryModal = ({
               )}
             </div>
 
-            {/* Redmine - HIDDEN IF CANCELLED */}
             {!isCancelled && (
             <div>
               <div className="flex justify-between mb-1.5">
@@ -266,30 +255,16 @@ const EntryModal = ({
                   )}
               </div>
               <div className="relative">
-                  <input 
-                    className={`${inputStyle(errors.redmineLink || errors.redmineDuplicate)} pl-8`} 
-                    placeholder="Paste URL..." 
-                    value={formData.redmineLink} 
-                    onChange={(e) => { setFormData({...formData, redmineLink: e.target.value}); setErrors({...errors, redmineLink: false, redmineDuplicate: false}); }} 
-                  />
+                  <input className={`${inputStyle(errors.redmineLink || errors.redmineDuplicate)} pl-8`} placeholder="Paste URL..." value={formData.redmineLink} onChange={(e) => { setFormData({...formData, redmineLink: e.target.value}); setErrors({...errors, redmineLink: false, redmineDuplicate: false}); }} />
                   <LinkIcon size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
               </div>
             </div>
             )}
 
-            {/* TYPE SELECTION */}
             <div className="grid grid-cols-2 gap-4">
                <div>
                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">Type</label>
-                   <select 
-                        className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-sm px-3 py-2 outline-none focus:border-black" 
-                        value={formData.type} 
-                        onChange={(e) => {
-                            const newType = e.target.value;
-                            setFormData({...formData, type: newType});
-                            if(newType === 'Cancelled') setErrors({});
-                        }}
-                   >
+                   <select className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-sm px-3 py-2 outline-none focus:border-black" value={formData.type} onChange={(e) => { const newType = e.target.value; setFormData({...formData, type: newType}); if(newType === 'Cancelled') setErrors({}); }}>
                         <option value="Scheduled">Scheduled</option>
                         <option value="Urgent">Urgent</option>
                         <option value="Cancelled">Cancelled</option>
@@ -297,72 +272,102 @@ const EntryModal = ({
                </div>
                <div className="flex items-end pb-2">
                    <label className={`flex items-center gap-2 cursor-pointer ${formData.type === 'Cancelled' ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                       <input 
-                            type="checkbox" 
-                            className="w-3.5 h-3.5 rounded-sm border-gray-300 text-black focus:ring-black" 
-                            checked={formData.isUntilFurtherNotice} 
-                            disabled={formData.type === 'Cancelled'}
-                            onChange={(e) => { setFormData({...formData, isUntilFurtherNotice: e.target.checked}); if(e.target.checked) setErrors({...errors, endTime: false}); }} 
-                        />
-                        <span className="text-xs font-medium text-gray-700">Until Further Notice</span>
+                       <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-black focus:ring-black" checked={formData.isUntilFurtherNotice} disabled={formData.type === 'Cancelled'} onChange={(e) => { setFormData({...formData, isUntilFurtherNotice: e.target.checked}); if(e.target.checked) setErrors({...errors, endTime: false}); }} />
+                       <span className="text-xs font-medium text-gray-700">Until Further Notice</span>
                    </label>
                </div>
             </div>
 
-            {/* TIME INPUTS: Conditionally Rendered */}
             {isCancelled ? (
-                // CANCELLED MODE: Only Date, No Time
                 <div>
                     <label className="block text-xs font-semibold mb-1.5 text-gray-500">Date of Cancellation *</label>
-                    <DatePicker
-                        value={formData.startTime}
-                        onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }}
-                        format="YYYY-MM-DD"
-                        slotProps={{ textField: { size: 'small', className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime, fullWidth: true } }}
-                    />
+                    <DatePicker value={formData.startTime} onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }} format="YYYY-MM-DD" slotProps={{ textField: { size: 'small', className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime, fullWidth: true } }} />
                 </div>
             ) : (
-                // NORMAL MODE: Start & End Time
                 <>
                     <div>
                         <label className="block text-xs font-semibold mb-1.5 text-gray-500">Start Time (UTC+8) *</label>
-                        {/* --- CHANGED: Desktop DateTimePicker with 1-min steps --- */}
-                        <DateTimePicker
-                            value={formData.startTime}
-                            onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }}
-                            timeSteps={{ minutes: 1 }}
-                            ampm={false}
-                            slotProps={{ 
-                                textField: { 
-                                    size: 'small', 
-                                    fullWidth: true,
-                                    className: errors.startTime ? 'bg-red-50' : '', 
-                                    error: !!errors.startTime 
-                                } 
-                            }}
-                        />
+                        <DateTimePicker value={formData.startTime} onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }} timeSteps={{ minutes: 1 }} ampm={false} slotProps={{ textField: { size: 'small', fullWidth: true, className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime } }} />
                     </div>
-
                     <div className={formData.isUntilFurtherNotice ? 'opacity-50 pointer-events-none' : ''}>
                         <label className="block text-xs font-semibold mb-1.5 text-gray-500">End Time (UTC+8) *</label>
-                        {/* --- CHANGED: Desktop DateTimePicker with 1-min steps --- */}
-                        <DateTimePicker
-                            value={formData.endTime}
-                            onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }}
-                            disabled={formData.isUntilFurtherNotice}
-                            timeSteps={{ minutes: 1 }}
-                            ampm={false}
-                            slotProps={{ 
-                                textField: { 
-                                    size: 'small', 
-                                    fullWidth: true,
-                                    className: errors.endTime ? 'bg-red-50' : '', 
-                                    error: !!errors.endTime 
-                                } 
-                            }}
-                        />
+                        <DateTimePicker value={formData.endTime} onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }} disabled={formData.isUntilFurtherNotice} timeSteps={{ minutes: 1 }} ampm={false} slotProps={{ textField: { size: 'small', fullWidth: true, className: errors.endTime ? 'bg-red-50' : '', error: !!errors.endTime } }} />
                     </div>
                 </>
+            )}
+            
+            {/* --- REDESIGNED RESCHEDULE SOP CHECKLIST --- */}
+            {showRescheduleSop && (
+                <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                    
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                        <div className="p-1.5 bg-red-100 text-red-600 rounded-md">
+                            <AlertCircle size={16} />
+                        </div>
+                        <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                            Reschedule Protocol
+                        </h4>
+                    </div>
+
+                    <div className="space-y-3">
+                        
+                        {/* Item 1: Internal Group */}
+                        <div 
+                            onClick={() => setRescheduleChecklist(p => ({...p, internal: !p.internal}))}
+                            className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${
+                                rescheduleChecklist.internal
+                                ? 'bg-emerald-50/80 border-emerald-500 shadow-md' 
+                                : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md'
+                            }`}
+                        >
+                             <div className="flex items-center gap-4">
+                                 {/* Icon */}
+                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                     rescheduleChecklist.internal 
+                                     ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 scale-110' 
+                                     : 'bg-gray-100 text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-500'
+                                 }`}>
+                                     {rescheduleChecklist.internal ? <Check size={16} strokeWidth={3} /> : <span className="text-xs font-bold">1</span>}
+                                 </div>
+                                 
+                                 {/* Text */}
+                                 <div className="flex-1">
+                                     <span className={`block text-xs font-bold transition-colors ${rescheduleChecklist.internal ? 'text-emerald-900' : 'text-gray-700'}`}>Notify Internal Group</span>
+                                 </div>
+                             </div>
+
+                             {/* Copy Section (Inside the card for better UX) */}
+                             <div className="mt-3 pl-12 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                                 <div className="flex-1 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-500 truncate select-all">
+                                    {getInternalUpdateMsg()}
+                                 </div>
+                                 <CopyButton text={getInternalUpdateMsg()} label="COPY" />
+                             </div>
+                        </div>
+
+                        {/* Item 2: BO Sync */}
+                        <div 
+                            onClick={() => setRescheduleChecklist(p => ({...p, boSync: !p.boSync}))}
+                            className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${
+                                rescheduleChecklist.boSync
+                                ? 'bg-emerald-50/80 border-emerald-500 shadow-md' 
+                                : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-md'
+                            }`}
+                        >
+                             <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                 rescheduleChecklist.boSync 
+                                 ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 scale-110' 
+                                 : 'bg-gray-100 text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-500'
+                             }`}>
+                                 {rescheduleChecklist.boSync ? <Check size={16} strokeWidth={3} /> : <span className="text-xs font-bold">2</span>}
+                             </div>
+                             <span className={`text-xs font-bold transition-colors ${rescheduleChecklist.boSync ? 'text-emerald-900' : 'text-gray-700'}`}>
+                                Update BO8.2 & Sync BO8.7
+                             </span>
+                        </div>
+
+                    </div>
+                </div>
             )}
 
           </div>
@@ -376,7 +381,17 @@ const EntryModal = ({
 
         <div className="px-6 py-4 border-t border-gray-100 bg-white flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-sm transition-colors">Cancel</button>
-          <button onClick={validateAndConfirm} disabled={loading} className="px-4 py-2 text-xs font-bold text-white bg-black hover:bg-gray-800 rounded-sm shadow-sm transition-colors flex items-center gap-2">{loading ? <Loader2 size={14} className="animate-spin" /> : (editingId ? 'Update Entry' : 'Confirm Entry')}</button>
+          <button 
+            onClick={validateAndConfirm} 
+            disabled={loading || (showRescheduleSop && (!rescheduleChecklist.internal || !rescheduleChecklist.boSync))} 
+            className={`px-4 py-2 text-xs font-bold text-white rounded-sm shadow-sm transition-colors flex items-center gap-2 ${
+                (showRescheduleSop && (!rescheduleChecklist.internal || !rescheduleChecklist.boSync)) 
+                ? 'bg-gray-300 cursor-not-allowed' 
+                : 'bg-black hover:bg-gray-800'
+            }`}
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : (editingId ? 'Update Entry' : 'Confirm Entry')}
+          </button>
         </div>
 
       </div>

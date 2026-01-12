@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 
 // --- FIXED IMPORTS ---
 import { format, toZonedTime } from 'date-fns-tz'; 
-import { isSameDay, differenceInMinutes, parseISO, addHours, addMinutes, isFuture, isToday } from 'date-fns'; 
+import { isSameDay, differenceInMinutes, parseISO, addHours, addMinutes, isFuture, isToday, addDays } from 'date-fns'; 
 // ---------------------
 
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -21,7 +21,7 @@ import {
   Gamepad2, User, CheckSquare, History as HistoryIcon, LayoutList,
   ShieldCheck, Shield, Users, LogOut, Check, Bell, Zap,
   PlayCircle, AlertTriangle, Timer, CheckCircle2, Ban,
-  MessageSquarePlus, Eraser, Lock, Info, Activity
+  MessageSquarePlus, Eraser, Lock, Info, Activity, Calendar // <-- Added Calendar Icon
 } from 'lucide-react';
 
 import NotificationToast from './NotificationToast';
@@ -36,6 +36,8 @@ import CancelRequestModal from './modals/CancelRequestModal';
 import DeleteRequestModal from './modals/DeleteRequestModal'; 
 import FeedbackModal from './modals/FeedbackModal'; 
 import ConfirmationModal from './modals/ConfirmationModal';
+import ScheduleModal from './modals/ScheduleModal'; // <-- Added ScheduleModal
+import { getChecklistForDate } from '../lib/scheduleRules'; // <-- Added Logic
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/"; 
 
@@ -67,6 +69,10 @@ const Dashboard = ({ session }) => {
   // --- PRESENCE STATE ---
   const [activeUsers, setActiveUsers] = useState([]);
   const [isPresenceMenuOpen, setIsPresenceMenuOpen] = useState(false);
+
+  // --- NEW: SCHEDULE STATE ---
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [checklistAlerted, setChecklistAlerted] = useState(false);
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -185,10 +191,40 @@ const Dashboard = ({ session }) => {
     };
   }, [userProfile.work_name]);
 
-  // --- NOTIFICATION LOGIC ---
+  // --- NOTIFICATION & SCHEDULE LOGIC ---
   useEffect(() => {
     const checkTimer = setInterval(() => {
        const now = new Date(); 
+       const timeZone = 'Asia/Shanghai';
+       
+       // --- NEW: 9:00 AM SCHEDULE CHECK ---
+       const nowZoned = toZonedTime(now, timeZone);
+       const currentHour = parseInt(format(nowZoned, 'H', { timeZone }));
+       
+       if (currentHour >= 9 && !checklistAlerted && maintenances.length > 0) {
+           const tomorrow = addDays(nowZoned, 1);
+           const checklist = getChecklistForDate(tomorrow, maintenances);
+           const missingCount = checklist.filter(i => i.status === 'missing').length;
+           
+           if (missingCount > 0) {
+               const missingNames = checklist.filter(i => i.status === 'missing').map(i => i.provider).join(', ');
+               triggerNotification(
+                   "Daily Schedule Alert", 
+                   `⚠️ Missing ${missingCount} checks for tomorrow (${format(tomorrow, 'MMM dd')}): ${missingNames}. Please check the Schedule.`, 
+                   "warning"
+               );
+               setChecklistAlerted(true);
+           } else {
+               // If nothing missing, mark alerted so we don't check again today
+               setChecklistAlerted(true);
+           }
+       }
+       // Reset alert flag next day (e.g., at midnight or 1 AM)
+       if (currentHour === 1 && checklistAlerted) {
+           setChecklistAlerted(false);
+       }
+       // -----------------------------------
+
        maintenances.forEach(m => {
           if (m.status === 'Completed' && !m.bo_deleted && m.completion_time) {
               const completeDate = parseISO(m.completion_time);
@@ -241,7 +277,7 @@ const Dashboard = ({ session }) => {
        });
     }, 5000); 
     return () => clearInterval(checkTimer);
-  }, [maintenances, userProfile]);
+  }, [maintenances, userProfile, checklistAlerted]);
 
   const handleSnooze = async (maintenanceId, notificationId) => {
     removeNotification(notificationId);
@@ -253,9 +289,16 @@ const Dashboard = ({ session }) => {
   const triggerNotification = (title, message, type, copyText = null, maintenanceId = null) => {
     playNotificationSound();
     const id = Date.now();
+    
+    // 1. Always show the In-App Toast
     setNotifications(prev => [...prev, { id, title, message, type, copyText, maintenanceId }]);
     setNotificationHistory(prev => [{ id, title, message, type, timestamp: new Date(), copyText }, ...prev]);
-    if ("Notification" in window && Notification.permission === "granted") new Notification(title, { body: message });
+    
+    // 2. ONLY send Browser Notification if it is NOT a success message (e.g. Warnings, Errors, Reminders)
+    if (type !== 'success' && "Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body: message });
+    }
+    
     setTimeout(() => removeNotification(id), 20000);
   };
   const removeNotification = (id) => setNotifications(prev => prev.filter(n => n.id !== id));
@@ -502,12 +545,29 @@ const Dashboard = ({ session }) => {
     await supabase.from('maintenances').update({ status: newStatus }).eq('id', id);
   };
 
-  const handleOpenNewEntry = () => {
+  // --- UPDATED ENTRY HANDLER (ACCEPTS PREFILL) ---
+  const handleOpenNewEntry = (prefillProvider = null, prefillDate = null) => {
     setEditingId(null);
     setErrors({});
-    const nowChina = dayjs().tz("Asia/Shanghai");
-    setFormData({ provider: '', type: 'Scheduled', isUntilFurtherNotice: false, redmineLink: '', startTime: nowChina, endTime: nowChina.add(2, 'hour') });
+    
+    // Default to current time in China
+    let startTime = dayjs().tz("Asia/Shanghai");
+    
+    // If opened from Schedule, use that date at 10:00 AM
+    if (prefillDate) {
+       startTime = dayjs(prefillDate).tz("Asia/Shanghai").hour(10).minute(0).second(0);
+    }
+
+    setFormData({ 
+        provider: typeof prefillProvider === 'string' ? prefillProvider : '', 
+        type: 'Scheduled', 
+        isUntilFurtherNotice: false, 
+        redmineLink: '', 
+        startTime: startTime, 
+        endTime: startTime.add(2, 'hour') 
+    });
     setIsModalOpen(true);
+    setIsScheduleModalOpen(false); // Close schedule if it was open
   };
 
   const handleEdit = (item) => {
@@ -670,14 +730,14 @@ const Dashboard = ({ session }) => {
         <NotificationToast notifications={notifications} removeNotification={removeNotification} onSnooze={handleSnooze} />
         <header className="h-14 border-b border-gray-200 flex items-center justify-between px-6 bg-white sticky top-0 z-20">
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2"><div className="bg-gray-900 text-white w-6 h-6 rounded flex items-center justify-center font-bold text-xs">IC</div><span className="font-semibold text-sm tracking-tight text-gray-700">Maintenance Control</span></div>
+            <div className="flex items-center gap-0"><div className="bg-gray-900 text-white w-45 h-6 rounded flex items-center justify-center font-bold text-xs">IC-Duty Maintenance Control</div></div>
             <div className="flex bg-gray-100 p-0.5 rounded-lg">
                <button onClick={() => setView('pending')} className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all ${view === 'pending' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-gray-900'}`}><LayoutList size={12} /> Pending</button>
                <button onClick={() => setView('history')} className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all ${view === 'history' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-gray-900'}`}><HistoryIcon size={12} /> History</button>
             </div>
           </div>
           <div className="flex items-center gap-4">
-             {/* --- NEW: ACTIVE USERS BADGE (HOVER TO SEE LIST) --- */}
+             {/* --- NEW: ACTIVE USERS BADGE --- */}
              <div className="relative group">
                 <button className="flex items-center gap-2 px-2 py-1 bg-white border border-gray-100 rounded-full hover:bg-gray-50 transition-colors shadow-sm">
                     <span className="relative flex h-2 w-2">
@@ -686,7 +746,6 @@ const Dashboard = ({ session }) => {
                     </span>
                     <span className="text-[10px] font-bold text-gray-600">{activeUsers.length} Online</span>
                 </button>
-                {/* DROPDOWN - SHOWS ON HOVER */}
                 {activeUsers.length > 0 && (
                     <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-100 rounded-lg shadow-xl z-50 overflow-hidden hidden group-hover:block animate-in fade-in zoom-in-95 duration-200">
                         <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-widest">
@@ -718,7 +777,16 @@ const Dashboard = ({ session }) => {
             <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><LogOut size={18} /></button>
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-3 font-mono text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded border border-gray-200"><div className="flex items-center gap-2 border-r border-gray-300 pr-3 mr-1"><CalendarDays size={14} /><span>{format(zonedTime, 'EEE, MMM dd', { timeZone })}</span></div><div className="flex items-center gap-2"><Clock size={14} /><span>{format(zonedTime, 'HH:mm:ss', { timeZone })}</span><span className="text-xs text-gray-400">UTC+8</span></div></div>
-            <button onClick={handleOpenNewEntry} className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2"><Plus size={14} /> New Entry</button>
+            
+            {/* --- NEW BUTTONS GROUP --- */}
+            <div className="flex gap-2">
+                <button onClick={() => setIsScheduleModalOpen(true)} className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
+                    <Calendar size={14} /> Schedule
+                </button>
+                <button onClick={() => handleOpenNewEntry()} className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
+                    <Plus size={14} /> New Entry
+                </button>
+            </div>
           </div>
         </header>
 
@@ -822,6 +890,15 @@ const Dashboard = ({ session }) => {
             </tbody>
           </table>
         </div>
+        
+        {/* --- SCHEDULE MODAL --- */}
+        <ScheduleModal 
+            isOpen={isScheduleModalOpen} 
+            onClose={() => setIsScheduleModalOpen(false)} 
+            maintenances={maintenances}
+            onOpenEntryModal={handleOpenNewEntry}
+        />
+
         <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} formData={formData} setFormData={setFormData} handleConfirm={handleConfirm} loading={loading} editingId={editingId} errors={errors} setErrors={setErrors} existingMaintenances={maintenances} />
         <CompletionModal isOpen={isCompletionModalOpen} onClose={() => setIsCompletionModalOpen(false)} onConfirm={confirmCompletion} item={completingItem} sopChecks={sopChecks} setSopChecks={setSopChecks} />
         <UserModal isOpen={isUserModalOpen} onClose={() => setIsUserModalOpen(false)} userTab={userTab} setUserTab={setUserTab} userList={userList} userForm={userForm} setUserForm={setUserForm} loading={loading} handleCreateUser={handleCreateUser} handleUpdateUser={handleUpdateUser} handleDeleteUser={handleDeleteUser} editingUser={editingUser} setEditingUser={setEditingUser} newUserCredentials={newUserCredentials} setNewUserCredentials={setNewUserCredentials} generatePassword={() => { const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"; let pass = ""; for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length)); setUserForm(prev => ({ ...prev, password: pass })); }} />
@@ -830,9 +907,8 @@ const Dashboard = ({ session }) => {
         <CancellationModal isOpen={isCancellationModalOpen} onClose={() => setIsCancellationModalOpen(false)} item={cancellingItem} onConfirm={handleConfirmCancel} loading={loading} />
         <CancelRequestModal isOpen={isCancelRequestModalOpen} onClose={() => setIsCancelRequestModalOpen(false)} item={cancellingItem} onConfirm={handleRequestCancelConfirm} loading={loading} />
         <DeleteRequestModal isOpen={isDeleteRequestModalOpen} onClose={() => setIsDeleteRequestModalOpen(false)} item={deleteRequestId} onConfirm={handleRequestDeleteConfirm} loading={loading} />
-        <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} userName={userProfile.work_name || 'User'} />
+        <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} userName={userProfile.work_name || 'User'} triggerNotification={triggerNotification} />
         
-        {/* --- CONFIRMATION MODAL --- */}
         <ConfirmationModal 
           isOpen={!!actionConfig}
           onClose={() => setActionConfig(null)}

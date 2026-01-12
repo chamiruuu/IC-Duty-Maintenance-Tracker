@@ -1,4 +1,7 @@
 import { isSameDay, parseISO, isMonday, getDate } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz'; // <--- Import Timezone Helper
+
+const TIMEZONE = 'Asia/Shanghai'; // <--- Define Standard Timezone
 
 // 0=Sun, 1=Mon, ..., 5=Fri
 export const WEEKLY_SCHEDULE = {
@@ -47,12 +50,22 @@ export const getChecklistForDate = (targetDate, maintenanceList) => {
     return activeRules.map(rule => {
         // Find if ANY entry exists for this provider on this date (Scheduled OR Cancelled)
         const foundEntry = maintenanceList.find(m => {
-            // Case-insensitive check
+            if (!m.start_time) return false;
+
+            // Case-insensitive name check
             const pName = m.provider.toLowerCase();
             const rName = rule.name.toLowerCase();
-            const dateMatch = isSameDay(parseISO(m.start_time), targetDate);
-            // Handle Cancelled entries which might only have start_time
-            return dateMatch && (pName.includes(rName) || rName.includes(pName));
+            const nameMatch = pName.includes(rName) || rName.includes(pName);
+
+            // --- TIMEZONE FIX ---
+            // Convert the DB ISO String (UTC) to Shanghai Time
+            const dbDateZoned = toZonedTime(parseISO(m.start_time), TIMEZONE);
+            
+            // Compare the Shanghai-converted DB date vs the Target Date
+            const dateMatch = isSameDay(dbDateZoned, targetDate);
+            // --------------------
+
+            return nameMatch && dateMatch;
         });
 
         return {

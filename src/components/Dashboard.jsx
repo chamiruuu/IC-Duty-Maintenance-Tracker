@@ -482,7 +482,11 @@ const Dashboard = ({ session }) => {
 
   const handleExtendMaintenance = async (id, newEndTimeDayJs, isNotice) => {
     setLoading(true);
-    const payload = { is_until_further_notice: isNotice, end_time: isNotice ? null : newEndTimeDayJs.toISOString() };
+    const payload = { 
+        is_until_further_notice: isNotice, 
+        end_time: isNotice ? null : newEndTimeDayJs.toISOString(),
+        type: 'Extended Maintenance' // <--- NEW: Updates the type!
+    };
     const { error } = await supabase.from('maintenances').update(payload).eq('id', id);
     setLoading(false);
     if (!error) { setIsResolutionModalOpen(false); fetchMaintenances(); }

@@ -43,20 +43,20 @@ const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
 
 const playNotificationSound = () => {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const audioContext = new AudioContext();
-    if (audioContext.state === 'suspended') audioContext.resume();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.3);
-  } catch (e) { console.error("Audio failed", e); }
+    // Create a new Audio object pointing to the file in your public folder
+    const audio = new Audio('/notification.mp3'); 
+    
+    // Optional: Adjust volume (0.0 to 1.0)
+    audio.volume = 0.5; 
+    
+    // Play the sound
+    audio.play().catch(e => {
+        // Browsers often block audio if the user hasn't interacted with the page yet
+        console.error("Audio play blocked (user must click page first)", e);
+    });
+  } catch (e) { 
+    console.error("Audio failed", e); 
+  }
 };
 
 const Dashboard = ({ session }) => {

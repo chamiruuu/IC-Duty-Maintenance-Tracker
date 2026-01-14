@@ -677,9 +677,20 @@ const Dashboard = ({ session }) => {
   };
 
   const getTypeBadge = (item) => {
+      // --- NEW: Extended Maintenance Badge (Orange) ---
+      if (item.type === 'Extended Maintenance') {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
+                EXTENDED
+            </span>
+          );
+      }
+      // ------------------------------------------------
+
       if (item.type === 'Urgent') {
           return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">URGENT</span>;
       }
+
       if (item.status === 'Completed' && item.completion_time && item.end_time) {
           const actual = parseISO(item.completion_time);
           const planned = parseISO(item.end_time);

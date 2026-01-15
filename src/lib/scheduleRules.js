@@ -19,7 +19,8 @@ export const WEEKLY_SCHEDULE = {
         { name: "MG Live", type: "weekly" }
     ],
     3: [ // WEDNESDAY Target
-        { name: "AWC", type: "weekly", note: "Sexy Casino" },
+        { name: "AWC", type: "weekly" },
+        { name: "Sexy Casino", type: "weekly" }, // <--- Added as a separate item
         { name: "DG Casino", type: "weekly" },
         { name: "CQ9 Slots", type: "weekly" },
         { name: "RSG", type: "weekly" }

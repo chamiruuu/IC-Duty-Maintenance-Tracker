@@ -108,6 +108,7 @@ const EntryModal = ({
   };
 
   const validateAndConfirm = () => {
+    // 1. Check SOP for Reschedules
     if (showRescheduleSop) {
         if (!rescheduleChecklist.internal || !rescheduleChecklist.boSync) return;
     }
@@ -115,6 +116,7 @@ const EntryModal = ({
     const newErrors = {};
     let hasError = false;
 
+    // 2. Standard Validations
     if (!formData.provider) { newErrors.provider = true; hasError = true; } 
     else if (!PROVIDERS.includes(formData.provider)) { newErrors.providerInvalid = true; hasError = true; }
     
@@ -122,32 +124,49 @@ const EntryModal = ({
     if (!formData.startTime) { newErrors.startTime = true; hasError = true; }
     if (!formData.isUntilFurtherNotice && !isCancelled && !formData.endTime) { newErrors.endTime = true; hasError = true; }
 
+    // 3. DUPLICATE CHECKER (Fixed for Timezones)
     if (existingMaintenances && !hasError && !editingId) {
-        const startDay = dayjs(formData.startTime).format('YYYY-MM-DD');
+        // FIX: Force the form date to Shanghai Timezone YYYY-MM-DD
+        const formDay = dayjs(formData.startTime).tz("Asia/Shanghai").format('YYYY-MM-DD');
+        
         const newTicket = formData.redmineLink ? formData.redmineLink.replace(/\D/g, '') : ''; 
         const otherMaintenances = existingMaintenances.filter(m => m.id !== editingId);
 
         const duplicateProvider = otherMaintenances.some(m => {
-            const mDay = dayjs(m.start_time).format('YYYY-MM-DD');
-            return (m.provider === formData.provider) && (mDay === startDay);
+            // FIX: Convert DB time to Shanghai Timezone YYYY-MM-DD for comparison
+            const mDay = dayjs(m.start_time).tz("Asia/Shanghai").format('YYYY-MM-DD');
+            
+            // Returns true if Provider matches AND Date matches
+            return (m.provider === formData.provider) && (mDay === formDay);
         });
 
-        if (duplicateProvider) { newErrors.providerDuplicate = true; hasError = true; }
+        if (duplicateProvider) { 
+            newErrors.providerDuplicate = true; 
+            hasError = true; 
+        }
 
         if (!isCancelled && newTicket.length > 0) {
             const duplicateTicket = otherMaintenances.some(m => {
                 const mTicket = m.redmine_ticket ? m.redmine_ticket.toString() : '';
                 return mTicket === newTicket;
             });
-            if (duplicateTicket) { newErrors.redmineDuplicate = true; hasError = true; }
+            if (duplicateTicket) { 
+                newErrors.redmineDuplicate = true; 
+                hasError = true; 
+            }
         }
     }
 
     if (hasError) { setErrors(newErrors); return; }
 
+    // 4. Prepare Data for Save
     let startString;
-    if (isCancelled) { startString = dayjs(formData.startTime).format('YYYY-MM-DD 00:00:00'); } 
-    else { startString = dayjs(formData.startTime).format('YYYY-MM-DD HH:mm:ss'); }
+    if (isCancelled) { 
+        // For cancelled items, lock to 00:00 Shanghai time
+        startString = dayjs(formData.startTime).tz("Asia/Shanghai").format('YYYY-MM-DD 00:00:00'); 
+    } else { 
+        startString = dayjs(formData.startTime).format('YYYY-MM-DD HH:mm:ss'); 
+    }
     const zonedStart = dayjs.tz(startString, "Asia/Shanghai");
     
     let zonedEnd = null;

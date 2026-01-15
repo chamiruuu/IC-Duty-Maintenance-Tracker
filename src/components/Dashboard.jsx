@@ -632,23 +632,34 @@ const Dashboard = ({ session }) => {
   const handleConfirm = async (zonedStartTime, zonedEndTime) => {
     setLoading(true);
     const digitsOnly = formData.redmineLink ? formData.redmineLink.replace(/\D/g, '') : null; 
+    
     let finalStatus = 'Upcoming';
     let isPendingCancel = false;
     let finalType = formData.type;
-    if (formData.type === 'Cancelled') { finalStatus = 'Cancelled'; finalType = 'Scheduled'; isPendingCancel = false; }
+    
+    // Logic: If Cancelled, force status AND type to 'Cancelled'
+    if (formData.type === 'Cancelled') { 
+        finalStatus = 'Cancelled'; 
+        finalType = 'Cancelled'; // <--- CHANGED THIS (Was 'Scheduled')
+        isPendingCancel = false; 
+    }
+
     const payload = {
       provider: formData.provider,
       type: finalType,
       start_time: zonedStartTime.toISOString(),
-      end_time: (formData.isUntilFurtherNotice || formData.type === 'Cancelled') ? null : zonedEndTime.toISOString(),
+      // Check to ensure we don't crash if zonedEndTime is missing
+      end_time: (formData.isUntilFurtherNotice || formData.type === 'Cancelled' || !zonedEndTime) ? null : zonedEndTime.toISOString(),
       is_until_further_notice: formData.isUntilFurtherNotice,
-      redmine_ticket: digitsOnly,
+      redmine_ticket: digitsOnly, 
       recorder: userProfile.work_name || session.user.email,
       cancellation_pending: isPendingCancel
     };
+
     let error;
     if (editingId) ({ error } = await supabase.from('maintenances').update(payload).eq('id', editingId));
     else ({ error } = await supabase.from('maintenances').insert([{ ...payload, status: finalStatus }]));
+    
     setLoading(false);
     if (!error) { 
       setIsModalOpen(false); 
@@ -677,7 +688,7 @@ const Dashboard = ({ session }) => {
   };
 
   const getTypeBadge = (item) => {
-      // --- NEW: Extended Maintenance Badge (Orange) ---
+      // 1. Extended Maintenance (Orange)
       if (item.type === 'Extended Maintenance') {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
@@ -685,12 +696,18 @@ const Dashboard = ({ session }) => {
             </span>
           );
       }
-      // ------------------------------------------------
 
+      // 2. Urgent (Red)
       if (item.type === 'Urgent') {
           return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">URGENT</span>;
       }
 
+      // 3. Cancelled (Gray & Strikethrough) - NEW FIX
+      if (item.type === 'Cancelled' || item.status === 'Cancelled') {
+          return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-500 border border-gray-300 line-through">CANCELLED</span>;
+      }
+
+      // 4. Early Completion (Indigo)
       if (item.status === 'Completed' && item.completion_time && item.end_time) {
           const actual = parseISO(item.completion_time);
           const planned = parseISO(item.end_time);
@@ -708,6 +725,8 @@ const Dashboard = ({ session }) => {
               );
           }
       }
+
+      // 5. Default Fallback
       return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">SCHEDULED</span>;
   };
 
@@ -751,17 +770,36 @@ const Dashboard = ({ session }) => {
   // --- FILTERING LOGIC ---
   const filteredMaintenances = getSortedMaintenances(maintenances.filter(item => {
     if (view === 'pending') {
+        // PENDING VIEW
         if (item.status === 'Completed') return !item.bo_deleted; 
+        
         if (item.status === 'Cancelled') {
-            const end = item.end_time ? parseISO(item.end_time) : parseISO(item.start_time);
-            return isToday(end) || isFuture(end);
+            // FIX: Convert to Shanghai Date String to compare "Days" instead of "Time"
+            // This prevents items from disappearing just because the time passed.
+            const itemDate = toZonedTime(parseISO(item.start_time), timeZone);
+            const nowDate = toZonedTime(new Date(), timeZone);
+            
+            const itemDateStr = format(itemDate, 'yyyy-MM-dd', { timeZone });
+            const todayStr = format(nowDate, 'yyyy-MM-dd', { timeZone });
+
+            // Show if the date is Today or Future
+            return itemDateStr >= todayStr;
         }
         return true;
     } else {
+        // HISTORY VIEW
         if (item.status === 'Completed') return item.bo_deleted;
+        
         if (item.status === 'Cancelled') {
-             const end = item.end_time ? parseISO(item.end_time) : parseISO(item.start_time);
-             return !isToday(end) && !isFuture(end);
+             // FIX: Inverse logic for History
+            const itemDate = toZonedTime(parseISO(item.start_time), timeZone);
+            const nowDate = toZonedTime(new Date(), timeZone);
+            
+            const itemDateStr = format(itemDate, 'yyyy-MM-dd', { timeZone });
+            const todayStr = format(nowDate, 'yyyy-MM-dd', { timeZone });
+
+            // Show only if the date is strictly in the Past (Yesterday or older)
+            return itemDateStr < todayStr;
         }
         return false;
     }

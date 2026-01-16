@@ -118,16 +118,40 @@ const Dashboard = ({ session }) => {
   });
 
   // --- INITIAL DATA & TIME SYNC ---
+  // --- INITIAL DATA & TIME SYNC (HARDENED FOR BACKGROUND USE) ---
   useEffect(() => {
     fetchUserProfile();
     fetchMaintenances();
-    if ("Notification" in window) Notification.requestPermission();
+    
+    // 1. Request Notification Permission
+    if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
 
-    const handleOnline = () => setIsConnected(true);
-    const handleOffline = () => setIsConnected(false);
+    // 2. Force Refresh on Network Reconnect
+    const handleOnline = () => { 
+        setIsConnected(true); 
+        fetchMaintenances(); // <--- NEW: Immediately sync data
+        triggerNotification('System Online', 'Connection restored. Data updated.', 'success');
+    };
+    
+    const handleOffline = () => {
+        setIsConnected(false);
+        triggerNotification('System Offline', 'Lost connection to server.', 'error');
+    };
+
+    // 3. Force Refresh when Tab becomes Visible (User clicks back to tab)
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            fetchMaintenances(); // <--- NEW: Syncs if tab was backgrounded
+        }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // 4. REAL-TIME SUBSCRIPTION
     const channelName = `maintenances_tracker_${Math.random()}`;
     const channel = supabase
       .channel(channelName)
@@ -139,6 +163,15 @@ const Dashboard = ({ session }) => {
         else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') setIsConnected(false);
       });
 
+    // 5. SAFETY POLLING (Fallback Method) - Runs every 60s
+    // This ensures data updates even if WebSocket sleeps in background tab
+    const pollingTimer = setInterval(() => {
+        if (document.visibilityState === 'hidden') {
+            fetchMaintenances();
+        }
+    }, 60000);
+
+    // 6. Clock Timer
     const clockTimer = setInterval(() => {
         const now = new Date();
         setCurrentTime(now);
@@ -149,6 +182,8 @@ const Dashboard = ({ session }) => {
       supabase.removeChannel(channel);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(pollingTimer);
       clearInterval(clockTimer);
     };
   }, []);

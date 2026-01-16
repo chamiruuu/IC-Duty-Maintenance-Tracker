@@ -38,21 +38,16 @@ import FeedbackModal from './modals/FeedbackModal';
 import ConfirmationModal from './modals/ConfirmationModal';
 import ScheduleModal from './modals/ScheduleModal'; 
 import { getChecklistForDate } from '../lib/scheduleRules'; 
+import { generateUrgentScript } from '../lib/scriptGenerator'; // <--- NEW IMPORT
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/"; 
 
 const playNotificationSound = () => {
   try {
-    // Create a new Audio object pointing to the file in your public folder
     const audio = new Audio('/notification.mp3'); 
-    
-    // Optional: Adjust volume (0.0 to 1.0)
     audio.volume = 0.5; 
-    
-    // Play the sound
     audio.play().catch(e => {
-        // Browsers often block audio if the user hasn't interacted with the page yet
-        console.error("Audio play blocked (user must click page first)", e);
+        console.error("Audio play blocked", e);
     });
   } catch (e) { 
     console.error("Audio failed", e); 
@@ -223,49 +218,89 @@ const Dashboard = ({ session }) => {
        if (currentHour === 1 && checklistAlerted) {
            setChecklistAlerted(false);
        }
-       // -----------------------------------
-
+       
        maintenances.forEach(m => {
-          if (m.status === 'Completed' && !m.bo_deleted && m.completion_time) {
-              const completeDate = parseISO(m.completion_time);
-              const twoHoursLater = addHours(completeDate, 2);
-              const diff = differenceInMinutes(now, twoHoursLater);
-              
-              const reminderId = `${m.id}-2hr-reminder`;
-              if (Math.abs(diff) <= 5 && !alertedRef.current.has(reminderId)) {
-                  triggerNotification(
-                      `Action Required: BO 8.2 Cleanup`, 
-                      `2 hours post-completion for ${m.provider}. Please delete announcement & confirm in dashboard.`, 
-                      'warning'
-                  );
-                  alertedRef.current.add(reminderId);
+          // 1. COMPLETED/CANCELLED CHECK (Existing Logic)
+          if (m.status === 'Cancelled' || m.status === 'Completed') {
+              if (m.status === 'Completed' && !m.bo_deleted && m.completion_time) {
+                  const completeDate = parseISO(m.completion_time);
+                  const twoHoursLater = addHours(completeDate, 2);
+                  const diff = differenceInMinutes(now, twoHoursLater);
+                  
+                  const reminderId = `${m.id}-2hr-reminder`;
+                  if (Math.abs(diff) <= 5 && !alertedRef.current.has(reminderId)) {
+                      triggerNotification(
+                          `Action Required: BO 8.2 Cleanup`, 
+                          `2 hours post-completion for ${m.provider}. Please delete announcement & confirm in dashboard.`, 
+                          'warning'
+                      );
+                      alertedRef.current.add(reminderId);
+                  }
               }
               return;
           }
 
-          if (m.status === 'Cancelled' || m.status === 'Completed') return;
-          if (m.is_until_further_notice || !m.end_time) return;
-          
+          // 2. "UNTIL FURTHER NOTICE" LOGIC (Shift Boundary System)
+          if (m.is_until_further_notice) {
+              const SHANGHAI_TZ = 'Asia/Shanghai';
+              const nowZoned = toZonedTime(now, SHANGHAI_TZ);
+              const currentH = parseInt(format(nowZoned, 'H', { timeZone: SHANGHAI_TZ }));
+              const currentM = parseInt(format(nowZoned, 'm', { timeZone: SHANGHAI_TZ }));
+              const currentTimeValue = currentH + (currentM / 60);
+
+              // Define Shift Start Times (07:00, 14:00, 22:30)
+              const shiftBoundaries = [7.0, 14.0, 22.5];
+
+              shiftBoundaries.forEach(boundary => {
+                  // Check if we are in the first 45 mins of a new shift
+                  // e.g., if Now is 14:15, boundary is 14.0. Diff is 0.25.
+                  const timeSinceShiftStart = currentTimeValue - boundary;
+                  
+                  if (timeSinceShiftStart >= 0 && timeSinceShiftStart < 0.75) {
+                      // We are at the start of a shift!
+                      // Now check: Did the maintenance start BEFORE this shift began?
+                      
+                      // Create a Date object for this specific boundary today
+                      const boundaryDate = toZonedTime(now, SHANGHAI_TZ);
+                      boundaryDate.setHours(Math.floor(boundary));
+                      boundaryDate.setMinutes((boundary % 1) * 60);
+                      boundaryDate.setSeconds(0);
+
+                      const maintenanceStart = toZonedTime(parseISO(m.start_time), SHANGHAI_TZ);
+
+                      if (maintenanceStart < boundaryDate) {
+                          // Uniquely identify this specific check (Item ID + Date + ShiftHour)
+                          const alertId = `${m.id}-shift-check-${format(nowZoned, 'yyyy-MM-dd')}-${boundary}`;
+                          
+                          if (!alertedRef.current.has(alertId)) {
+                              const script = `Hi Team, This is ${userProfile.work_name}. May we know if there is any update regarding the time when the urgent maintenance will conclude? Thank You.`;
+                              
+                              triggerNotification(
+                                  `Shift Handover Check: ${m.provider}`, 
+                                  `New Shift Started (${format(boundaryDate, 'HH:mm')}). Please follow up with provider.`, 
+                                  'warning', 
+                                  script
+                              );
+                              alertedRef.current.add(alertId);
+                          }
+                      }
+                  }
+              });
+              return; // Stop here, do not run standard scheduled checks
+          }
+
+          // 3. STANDARD SCHEDULED LOGIC (Fixed End Time)
+          if (!m.end_time) return;
+
           const endDate = parseISO(m.end_time); 
           const minutesLeft = differenceInMinutes(endDate, now); 
           const minutesPast = differenceInMinutes(now, endDate); 
 
-          // ---------------------------------------------------------
-          // UPDATED: 30-Minute Check-In Alert (The Main SOP Trigger)
-          // ---------------------------------------------------------
           const alertId30 = `${m.id}-30min-warn`;
           if (minutesLeft <= 30 && minutesLeft > 25 && !alertedRef.current.has(alertId30)) {
-                const endStr = m.end_time ? format(parseISO(m.end_time), 'HH:mm') : 'the scheduled time';
-                
-                // The Official 30-min Script
+                const endStr = format(parseISO(m.end_time), 'HH:mm');
                 const script = `Hi Team, This is ${userProfile.work_name}. May we confirm if the maintenance end on time ${endStr}? Thank You.`;
-                
-                triggerNotification(
-                    `30-Min Check: ${m.provider}`, 
-                    `Time to confirm status. Click to copy script.`, 
-                    'warning', 
-                    script // <--- Passes script to copy
-                );
+                triggerNotification(`30-Min Check: ${m.provider}`, `Time to confirm status. Click to copy script.`, 'warning', script);
                 alertedRef.current.add(alertId30);
           }
 
@@ -302,21 +337,15 @@ const Dashboard = ({ session }) => {
   const triggerNotification = (title, message, type, copyText = null, maintenanceId = null) => {
     playNotificationSound();
     const id = Date.now();
-    
-    // 1. Always show the In-App Toast
     setNotifications(prev => [...prev, { id, title, message, type, copyText, maintenanceId }]);
     setNotificationHistory(prev => [{ id, title, message, type, timestamp: new Date(), copyText }, ...prev]);
-    
-    // 2. ONLY send Browser Notification if it is NOT a success message
     if (type !== 'success' && "Notification" in window && Notification.permission === "granted") {
         new Notification(title, { body: message });
     }
-    
     setTimeout(() => removeNotification(id), 20000);
   };
   const removeNotification = (id) => setNotifications(prev => prev.filter(n => n.id !== id));
 
-  // --- MASTER ACTION EXECUTOR ---
   const executeAction = async (actionType, payload) => {
     try {
       setLoading(true);
@@ -333,33 +362,24 @@ const Dashboard = ({ session }) => {
         setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now } : m));
         const { error: err } = await supabase.from('maintenances').update({ bo_deleted: true, bo_deleted_by: deleterName, bo_deleted_at: now }).eq('id', item.id);
         error = err;
-        if (!error) {
-          triggerNotification('Success', `BO 8.2 cleanup confirmed for ${item.provider}.`, 'success');
-        }
+        if (!error) triggerNotification('Success', `BO 8.2 cleanup confirmed for ${item.provider}.`, 'success');
       } 
       else if (actionType === 'UNDO_COMPLETION') {
         const { item } = payload;
         setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, status: 'Upcoming', completion_time: null, completed_by: null } : m));
         const { error: err } = await supabase.from('maintenances').update({ status: 'Upcoming', completion_time: null, completed_by: null }).eq('id', item.id);
         error = err;
-        if (!error) {
-          triggerNotification('Success', `Completion undone for ${item.provider}. Status reverted to Pending.`, 'success');
-        }
+        if (!error) triggerNotification('Success', `Completion undone for ${item.provider}. Status reverted to Pending.`, 'success');
       } 
       else if (actionType === 'UNDO_BO_CLEAN') {
         const { item } = payload;
         setMaintenances(prev => prev.map(m => m.id === item.id ? { ...m, bo_deleted: false, bo_deleted_by: null, bo_deleted_at: null } : m));
         const { error: err } = await supabase.from('maintenances').update({ bo_deleted: false, bo_deleted_by: null, bo_deleted_at: null }).eq('id', item.id);
         error = err;
-        if (!error) {
-          triggerNotification('Success', `BO 8.2 cleanup undone for ${item.provider}. Please clean again.`, 'success');
-        }
+        if (!error) triggerNotification('Success', `BO 8.2 cleanup undone for ${item.provider}. Please clean again.`, 'success');
       }
 
-      if (error) {
-        triggerNotification('Error', error.message || 'An error occurred.', 'error');
-      }
-
+      if (error) triggerNotification('Error', error.message || 'An error occurred.', 'error');
       setActionConfig(null);
     } catch (err) {
       triggerNotification('Error', err.message || 'An unexpected error occurred.', 'error');
@@ -376,7 +396,6 @@ const Dashboard = ({ session }) => {
     const h = parseInt(format(zonedTime, 'H', { timeZone }));
     const m = parseInt(format(zonedTime, 'm', { timeZone }));
     const name = userProfile.work_name || 'User';
-
     if (h >= 7 && h < 14) return `Good Morning, ${name}`;
     if ((h >= 14 && h < 22) || (h === 22 && m < 30)) return `Good Afternoon, ${name}`;
     return `Good Night, ${name}`;
@@ -402,9 +421,8 @@ const Dashboard = ({ session }) => {
     setLoading(true);
     const { error } = await supabase.rpc('create_new_user', { new_email: userForm.email, new_password: userForm.password, new_work_name: userForm.workName, new_role: userForm.role });
     setLoading(false);
-    if (error) {
-      triggerNotification('Error', error.message, 'error');
-    } else {
+    if (error) triggerNotification('Error', error.message, 'error');
+    else {
       setNewUserCredentials({ email: userForm.email, password: userForm.password, role: userForm.role, workName: userForm.workName });
       setUserForm({ email: '', workName: '', password: '', role: 'normal' });
       fetchUserList();
@@ -413,23 +431,13 @@ const Dashboard = ({ session }) => {
   };
   const handleUpdateUser = async (userId, updates) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
-    if (error) {
-      triggerNotification('Error', `Update failed: ${error.message}`, 'error');
-    } else {
-      setEditingUser(null);
-      fetchUserList();
-      triggerNotification('Success', 'User updated successfully.', 'success');
-    }
+    if (error) triggerNotification('Error', `Update failed: ${error.message}`, 'error');
+    else { setEditingUser(null); fetchUserList(); triggerNotification('Success', 'User updated successfully.', 'success'); }
   };
-  
   const handleDeleteUser = async (userId, userName) => {
     const { error } = await supabase.rpc('delete_user', { target_user_id: userId });
-    if (error) {
-      triggerNotification('Error', `Delete failed: ${error.message}`, 'error');
-    } else {
-      fetchUserList();
-      triggerNotification('Success', `User ${userName} deleted successfully.`, 'success');
-    }
+    if (error) triggerNotification('Error', `Delete failed: ${error.message}`, 'error');
+    else { fetchUserList(); triggerNotification('Success', `User ${userName} deleted successfully.`, 'success'); }
   };
 
   const fetchMaintenances = async () => {
@@ -457,27 +465,15 @@ const Dashboard = ({ session }) => {
     await supabase.from('maintenances').delete().eq('id', deletingId);
     setLoading(false); setIsDeleteModalOpen(false); setDeletingId(null);
   };
-  
   const handleRejectDelete = async () => {
     if (!deletingId) return;
     setLoading(true);
-    
-    // Set deletion_pending to false (Keep the entry)
-    const { error } = await supabase
-      .from('maintenances')
-      .update({ deletion_pending: false })
-      .eq('id', deletingId);
-      
+    const { error } = await supabase.from('maintenances').update({ deletion_pending: false }).eq('id', deletingId);
     setLoading(false);
-    
     if (!error) {
       triggerNotification('Success', 'Delete request rejected. Entry restored.', 'success');
-      setIsDeleteModalOpen(false);
-      setDeletingId(null);
-      fetchMaintenances();
-    } else {
-      triggerNotification('Error', error.message, 'error');
-    }
+      setIsDeleteModalOpen(false); setDeletingId(null); fetchMaintenances();
+    } else triggerNotification('Error', error.message, 'error');
   };
 
   const handleExtendMaintenance = async (id, newEndTimeDayJs, isNotice) => {
@@ -485,7 +481,7 @@ const Dashboard = ({ session }) => {
     const payload = { 
         is_until_further_notice: isNotice, 
         end_time: isNotice ? null : newEndTimeDayJs.toISOString(),
-        type: 'Extended Maintenance' // <--- NEW: Updates the type!
+        type: 'Extended Maintenance' 
     };
     const { error } = await supabase.from('maintenances').update(payload).eq('id', id);
     setLoading(false);
@@ -507,7 +503,7 @@ const Dashboard = ({ session }) => {
   };
   const handleOpenResolution = (item, mode = 'select') => { 
       setResolvingItem(item); 
-      setResolutionInitialMode(mode); // Sets 'select' or 'extend'
+      setResolutionInitialMode(mode); 
       setIsResolutionModalOpen(true); 
   };
   const handleProceedToCompletion = () => { setIsResolutionModalOpen(false); initiateCompletion(resolvingItem); };
@@ -546,6 +542,15 @@ const Dashboard = ({ session }) => {
     await supabase.from('maintenances').update({ status: 'Completed', completion_time: finalTimeISO, completed_by: completerName }).eq('id', completingItem.id);
     setIsCompletionModalOpen(false);
     setCompletingItem(null);
+
+    // --- NEW: Generate Finish Script for Urgent Completion ---
+    let finishScript = null;
+    if (completingItem.type === 'Urgent') {
+        const scriptData = { provider: completingItem.provider, startTime: completingItem.start_time, endTime: null, isUntilFurtherNotice: false };
+        const scripts = generateUrgentScript(scriptData);
+        finishScript = scripts.finishMessage;
+    }
+    triggerNotification('Success', 'Maintenance Completed.', 'success', finishScript);
   };
 
   const handleConfirmBODeleted = (item) => {
@@ -557,61 +562,26 @@ const Dashboard = ({ session }) => {
       payload: { item }
     });
   };
-
   const handleUndoCompletion = (item) => {
     if (!isHighLevel) return;
-    if (item.bo_deleted) {
-      triggerNotification('Warning', `Please Undo 'BO Clean' first.`, 'warning');
-      return;
-    }
-    setActionConfig({
-      type: 'UNDO_COMPLETION',
-      title: 'Undo Completion',
-      message: `Undo Completion for ${item.provider}? This will revert it to 'Pending'.`,
-      confirmText: 'Undo',
-      payload: { item }
-    });
+    if (item.bo_deleted) { triggerNotification('Warning', `Please Undo 'BO Clean' first.`, 'warning'); return; }
+    setActionConfig({ type: 'UNDO_COMPLETION', title: 'Undo Completion', message: `Undo Completion for ${item.provider}? This will revert it to 'Pending'.`, confirmText: 'Undo', payload: { item } });
   };
-
   const handleUndoBOClean = (item) => {
     if (!isHighLevel) return;
-    setActionConfig({
-      type: 'UNDO_BO_CLEAN',
-      title: 'Undo BO 8.2 Cleanup',
-      message: `Undo BO 8.2 Clean for ${item.provider}? This will require cleaning again.`,
-      confirmText: 'Undo',
-      payload: { item }
-    });
+    setActionConfig({ type: 'UNDO_BO_CLEAN', title: 'Undo BO 8.2 Cleanup', message: `Undo BO 8.2 Clean for ${item.provider}? This will require cleaning again.`, confirmText: 'Undo', payload: { item } });
   };
-
   const toggleStatus = async (id, newStatus) => {
     setMaintenances(prev => prev.map(m => m.id === id ? { ...m, status: newStatus } : m));
     await supabase.from('maintenances').update({ status: newStatus }).eq('id', id);
   };
 
-  // --- UPDATED ENTRY HANDLER (ACCEPTS PREFILL) ---
   const handleOpenNewEntry = (prefillProvider = null, prefillDate = null) => {
-    setEditingId(null);
-    setErrors({});
-    
-    // Default to current time in China
+    setEditingId(null); setErrors({});
     let startTime = dayjs().tz("Asia/Shanghai");
-    
-    // If opened from Schedule, use that date at 10:00 AM
-    if (prefillDate) {
-       startTime = dayjs(prefillDate).tz("Asia/Shanghai").hour(10).minute(0).second(0);
-    }
-
-    setFormData({ 
-        provider: typeof prefillProvider === 'string' ? prefillProvider : '', 
-        type: 'Scheduled', 
-        isUntilFurtherNotice: false, 
-        redmineLink: '', 
-        startTime: startTime, 
-        endTime: startTime.add(2, 'hour') 
-    });
-    setIsModalOpen(true);
-    setIsScheduleModalOpen(false); // Close schedule if it was open
+    if (prefillDate) startTime = dayjs(prefillDate).tz("Asia/Shanghai").hour(10).minute(0).second(0);
+    setFormData({ provider: typeof prefillProvider === 'string' ? prefillProvider : '', type: 'Scheduled', isUntilFurtherNotice: false, redmineLink: '', startTime: startTime, endTime: startTime.add(2, 'hour') });
+    setIsModalOpen(true); setIsScheduleModalOpen(false);
   };
 
   const handleEdit = (item) => {
@@ -632,28 +602,14 @@ const Dashboard = ({ session }) => {
   const handleConfirm = async (zonedStartTime, zonedEndTime) => {
     setLoading(true);
     const digitsOnly = formData.redmineLink ? formData.redmineLink.replace(/\D/g, '') : null; 
-    
-    let finalStatus = 'Upcoming';
-    let isPendingCancel = false;
-    let finalType = formData.type;
-    
-    // Logic: If Cancelled, force status AND type to 'Cancelled'
-    if (formData.type === 'Cancelled') { 
-        finalStatus = 'Cancelled'; 
-        finalType = 'Cancelled'; // <--- CHANGED THIS (Was 'Scheduled')
-        isPendingCancel = false; 
-    }
+    let finalStatus = 'Upcoming'; let isPendingCancel = false; let finalType = formData.type;
+    if (formData.type === 'Cancelled') { finalStatus = 'Cancelled'; finalType = 'Cancelled'; isPendingCancel = false; }
 
     const payload = {
-      provider: formData.provider,
-      type: finalType,
-      start_time: zonedStartTime.toISOString(),
-      // Check to ensure we don't crash if zonedEndTime is missing
+      provider: formData.provider, type: finalType, start_time: zonedStartTime.toISOString(),
       end_time: (formData.isUntilFurtherNotice || formData.type === 'Cancelled' || !zonedEndTime) ? null : zonedEndTime.toISOString(),
-      is_until_further_notice: formData.isUntilFurtherNotice,
-      redmine_ticket: digitsOnly, 
-      recorder: userProfile.work_name || session.user.email,
-      cancellation_pending: isPendingCancel
+      is_until_further_notice: formData.isUntilFurtherNotice, redmine_ticket: digitsOnly, 
+      recorder: userProfile.work_name || session.user.email, cancellation_pending: isPendingCancel
     };
 
     let error;
@@ -662,14 +618,21 @@ const Dashboard = ({ session }) => {
     
     setLoading(false);
     if (!error) { 
+      setIsModalOpen(false); setEditingId(null); setErrors({}); fetchMaintenances();
+      
+      // --- NEW: Generate Start Script for Urgent ---
+      if (!error) { 
       setIsModalOpen(false); 
       setEditingId(null); 
       setErrors({}); 
       fetchMaintenances();
+      
+      // Just a simple success message. No button.
       triggerNotification('Success', `Maintenance entry ${editingId ? 'updated' : 'created'} successfully.`, 'success');
     } else {
       triggerNotification('Error', error.message, 'error');
     }
+    } else triggerNotification('Error', error.message, 'error');
   };
 
   const getRedmineDisplayId = (ticketNum) => ticketNum ? `CS-${ticketNum.toString().replace(/\D/g, '')}` : '-';
@@ -688,45 +651,16 @@ const Dashboard = ({ session }) => {
   };
 
   const getTypeBadge = (item) => {
-      // 1. Extended Maintenance (Orange)
-      if (item.type === 'Extended Maintenance') {
-          return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
-                EXTENDED
-            </span>
-          );
-      }
-
-      // 2. Urgent (Red)
-      if (item.type === 'Urgent') {
-          return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">URGENT</span>;
-      }
-
-      // 3. Cancelled (Gray & Strikethrough) - NEW FIX
-      if (item.type === 'Cancelled' || item.status === 'Cancelled') {
-          return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-500 border border-gray-300 line-through">CANCELLED</span>;
-      }
-
-      // 4. Early Completion (Indigo)
+      if (item.type === 'Extended Maintenance') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">EXTENDED</span>;
+      if (item.type === 'Urgent') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">URGENT</span>;
+      if (item.type === 'Cancelled' || item.status === 'Cancelled') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-500 border border-gray-300 line-through">CANCELLED</span>;
       if (item.status === 'Completed' && item.completion_time && item.end_time) {
-          const actual = parseISO(item.completion_time);
-          const planned = parseISO(item.end_time);
+          const actual = parseISO(item.completion_time); const planned = parseISO(item.end_time);
           if (differenceInMinutes(planned, actual) > 5) {
               const displayTime = format(toZonedTime(actual, timeZone), 'HH:mm', { timeZone });
-              return (
-                <div className="relative group inline-block cursor-help">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 hover:bg-indigo-200 transition-colors">
-                        EARLY <Clock size={10} />
-                    </span>
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block whitespace-nowrap bg-gray-900 text-white text-[10px] py-1 px-2 rounded shadow-lg z-50">
-                        Completion Time: {displayTime}
-                    </div>
-                </div>
-              );
+              return <div className="relative group inline-block cursor-help"><span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 hover:bg-indigo-200 transition-colors">EARLY <Clock size={10} /></span><div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block whitespace-nowrap bg-gray-900 text-white text-[10px] py-1 px-2 rounded shadow-lg z-50">Completion Time: {displayTime}</div></div>;
           }
       }
-
-      // 5. Default Fallback
       return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">SCHEDULED</span>;
   };
 
@@ -739,10 +673,7 @@ const Dashboard = ({ session }) => {
             ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 animate-pulse"><Eraser size={12} /> BO Clean Pending</span>
             : <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200 cursor-default"><CheckCircle2 size={12} /> Completed</span>;
     }
-
-    const now = new Date(); 
-    const start = parseISO(item.start_time); 
-    const end = item.end_time ? parseISO(item.end_time) : null;
+    const now = new Date(); const start = parseISO(item.start_time); const end = item.end_time ? parseISO(item.end_time) : null;
     if (now < start) return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 cursor-default"><Timer size={12} /> Upcoming</span>;
     if (end && now > end) return <button onClick={() => handleOpenResolution(item)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-pulse hover:bg-red-100 transition-colors"><AlertTriangle size={12} /> Action Required</button>;
     return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"><span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>Ongoing</span>;
@@ -750,72 +681,39 @@ const Dashboard = ({ session }) => {
 
   const getSortedMaintenances = (items) => {
     return [...items].sort((a, b) => {
-        const isAComplete = a.status === 'Completed';
-        const isBComplete = b.status === 'Completed';
-        if (isAComplete && !isBComplete) return 1;
-        if (!isAComplete && isBComplete) return -1;
-        const isAUrgent = a.type === 'Urgent';
-        const isBUrgent = b.type === 'Urgent';
-        if (isAUrgent && !isBUrgent) return -1;
-        if (!isAUrgent && isBUrgent) return 1;
-        const startA = new Date(a.start_time).getTime();
-        const startB = new Date(b.start_time).getTime();
+        const isAComplete = a.status === 'Completed'; const isBComplete = b.status === 'Completed';
+        if (isAComplete && !isBComplete) return 1; if (!isAComplete && isBComplete) return -1;
+        const isAUrgent = a.type === 'Urgent'; const isBUrgent = b.type === 'Urgent';
+        if (isAUrgent && !isBUrgent) return -1; if (!isAUrgent && isBUrgent) return 1;
+        const startA = new Date(a.start_time).getTime(); const startB = new Date(b.start_time).getTime();
         if (startA !== startB) return startA - startB;
-        const endA = a.end_time ? new Date(a.end_time).getTime() : 9999999999999;
-        const endB = b.end_time ? new Date(b.end_time).getTime() : 9999999999999;
-        return endA - endB;
+        return (a.end_time ? new Date(a.end_time).getTime() : 9999999999999) - (b.end_time ? new Date(b.end_time).getTime() : 9999999999999);
     });
   };
 
-  // --- FILTERING LOGIC ---
   const filteredMaintenances = getSortedMaintenances(maintenances.filter(item => {
     if (view === 'pending') {
-        // PENDING VIEW
         if (item.status === 'Completed') return !item.bo_deleted; 
-        
         if (item.status === 'Cancelled') {
-            // FIX: Convert to Shanghai Date String to compare "Days" instead of "Time"
-            // This prevents items from disappearing just because the time passed.
-            const itemDate = toZonedTime(parseISO(item.start_time), timeZone);
-            const nowDate = toZonedTime(new Date(), timeZone);
-            
-            const itemDateStr = format(itemDate, 'yyyy-MM-dd', { timeZone });
-            const todayStr = format(nowDate, 'yyyy-MM-dd', { timeZone });
-
-            // Show if the date is Today or Future
-            return itemDateStr >= todayStr;
+            const itemDate = toZonedTime(parseISO(item.start_time), timeZone); const nowDate = toZonedTime(new Date(), timeZone);
+            return format(itemDate, 'yyyy-MM-dd', { timeZone }) >= format(nowDate, 'yyyy-MM-dd', { timeZone });
         }
         return true;
     } else {
-        // HISTORY VIEW
         if (item.status === 'Completed') return item.bo_deleted;
-        
         if (item.status === 'Cancelled') {
-             // FIX: Inverse logic for History
-            const itemDate = toZonedTime(parseISO(item.start_time), timeZone);
-            const nowDate = toZonedTime(new Date(), timeZone);
-            
-            const itemDateStr = format(itemDate, 'yyyy-MM-dd', { timeZone });
-            const todayStr = format(nowDate, 'yyyy-MM-dd', { timeZone });
-
-            // Show only if the date is strictly in the Past (Yesterday or older)
-            return itemDateStr < todayStr;
+            const itemDate = toZonedTime(parseISO(item.start_time), timeZone); const nowDate = toZonedTime(new Date(), timeZone);
+            return format(itemDate, 'yyyy-MM-dd', { timeZone }) < format(nowDate, 'yyyy-MM-dd', { timeZone });
         }
         return false;
     }
   }));
 
   const getMinutesSinceCompletion = (completionTime) => {
-      if (!completionTime) return 0;
-      const now = new Date(); 
-      const done = new Date(completionTime); 
-      const diffMs = now - done;
-      return Math.floor(diffMs / 1000 / 60); 
+      if (!completionTime) return 0; const now = new Date(); const done = new Date(completionTime); 
+      return Math.floor((now - done) / 1000 / 60); 
   };
-
-  const isBOCleanupEnabled = (completionTime) => {
-      return getMinutesSinceCompletion(completionTime) >= 120; 
-  };
+  const isBOCleanupEnabled = (completionTime) => getMinutesSinceCompletion(completionTime) >= 120; 
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -830,36 +728,18 @@ const Dashboard = ({ session }) => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-             {/* --- NEW: ACTIVE USERS BADGE --- */}
              <div className="relative group">
                 <button className="flex items-center gap-2 px-2 py-1 bg-white border border-gray-100 rounded-full hover:bg-gray-50 transition-colors shadow-sm">
-                    <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
+                    <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>
                     <span className="text-[10px] font-bold text-gray-600">{activeUsers.length} Online</span>
                 </button>
                 {activeUsers.length > 0 && (
                     <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-100 rounded-lg shadow-xl z-50 overflow-hidden hidden group-hover:block animate-in fade-in zoom-in-95 duration-200">
-                        <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-widest">
-                            Currently Active
-                        </div>
-                        <ul className="max-h-40 overflow-y-auto">
-                            {activeUsers.map((u, i) => (
-                                <li key={i} className="px-3 py-2 text-xs text-gray-700 flex items-center justify-between hover:bg-gray-50">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                                        <span className="font-medium truncate max-w-[100px]">{u.name}</span>
-                                    </div>
-                                    {u.role !== 'normal' && <span className="text-[8px] px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-gray-500 uppercase">{u.role}</span>}
-                                </li>
-                            ))}
-                        </ul>
+                        <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Currently Active</div>
+                        <ul className="max-h-40 overflow-y-auto">{activeUsers.map((u, i) => (<li key={i} className="px-3 py-2 text-xs text-gray-700 flex items-center justify-between hover:bg-gray-50"><div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div><span className="font-medium truncate max-w-[100px]">{u.name}</span></div>{u.role !== 'normal' && <span className="text-[8px] px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-gray-500 uppercase">{u.role}</span>}</li>))}</ul>
                     </div>
                 )}
              </div>
-             {/* --------------------------------------------------- */}
-
              <span className="hidden md:block text-xs font-medium text-gray-500 animate-in fade-in slide-in-from-top-2">{getGreeting()}</span>
              <button onClick={() => setIsFeedbackModalOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors" title="Submit Feedback"><MessageSquarePlus size={18} /></button>
              <div className="relative">
@@ -870,15 +750,9 @@ const Dashboard = ({ session }) => {
             <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><LogOut size={18} /></button>
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-3 font-mono text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded border border-gray-200"><div className="flex items-center gap-2 border-r border-gray-300 pr-3 mr-1"><CalendarDays size={14} /><span>{format(zonedTime, 'EEE, MMM dd', { timeZone })}</span></div><div className="flex items-center gap-2"><Clock size={14} /><span>{format(zonedTime, 'HH:mm:ss', { timeZone })}</span><span className="text-xs text-gray-400">UTC+8</span></div></div>
-            
-            {/* --- NEW BUTTONS GROUP --- */}
             <div className="flex gap-2">
-                <button onClick={() => setIsScheduleModalOpen(true)} className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
-                    <Calendar size={14} /> Schedule
-                </button>
-                <button onClick={() => handleOpenNewEntry()} className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
-                    <Plus size={14} /> New Entry
-                </button>
+                <button onClick={() => setIsScheduleModalOpen(true)} className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2"><Calendar size={14} /> Schedule</button>
+                <button onClick={() => handleOpenNewEntry()} className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2"><Plus size={14} /> New Entry</button>
             </div>
           </div>
         </header>
@@ -911,101 +785,38 @@ const Dashboard = ({ session }) => {
                   <td className="px-6 py-3 text-center text-gray-400 text-xs">{index + 1}</td>
                   <td className="px-6 py-3">{item.status !== 'Cancelled' && item.redmine_ticket ? <a href={`${REDMINE_BASE_URL}${item.redmine_ticket}`} target="_blank" rel="noopener noreferrer" className="font-mono text-indigo-600 hover:underline flex items-center gap-1 w-fit">{getRedmineDisplayId(item.redmine_ticket)} <ExternalLink size={10} className="opacity-0 group-hover:opacity-100" /></a> : <span className="text-gray-400">-</span>}</td>
                   <td className="px-6 py-3"><div className="flex items-center gap-2"><Gamepad2 size={14} className="text-gray-400" /><div><div className={`font-medium ${item.status === 'Cancelled' ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{item.provider}</div><div className="text-xs text-gray-500 mt-0.5">{item.status === 'Cancelled' ? 'Cancelled' : item.type}</div></div></div></td>
-                  
                   <td className="px-6 py-3">{getTypeBadge(item)}</td>
-
                   <td className="px-6 py-3 font-mono text-gray-600 text-xs">{formatSmartDate(item.start_time, item.end_time, item.is_until_further_notice, item.status)}</td>
-                  
                   <td className="px-6 py-3">{getStatusBadge(item)}</td>
-
-                  <td className="px-6 py-3 text-xs text-gray-600 font-medium">
-                      <div className="flex items-center gap-1.5"><User size={12} className="text-gray-400" /> {item.recorder}</div>
-                  </td>
-
+                  <td className="px-6 py-3 text-xs text-gray-600 font-medium"><div className="flex items-center gap-1.5"><User size={12} className="text-gray-400" /> {item.recorder}</div></td>
                   <td className="px-6 py-3 text-xs">
                       {item.status === 'Completed' ? (
-                        <button 
-                            onClick={() => handleUndoCompletion(item)}
-                            disabled={!isHighLevel}
-                            className={`flex items-center gap-1.5 text-emerald-600 font-bold transition-all ${isHighLevel ? 'hover:text-red-600 cursor-pointer' : 'cursor-default'}`}
-                            title={isHighLevel ? "Click to UNDO Completion" : "Completed"}
-                        >
-                            <CheckCircle2 size={12} /> {item.completed_by}
-                        </button>
+                        <button onClick={() => handleUndoCompletion(item)} disabled={!isHighLevel} className={`flex items-center gap-1.5 text-emerald-600 font-bold transition-all ${isHighLevel ? 'hover:text-red-600 cursor-pointer' : 'cursor-default'}`} title={isHighLevel ? "Click to UNDO Completion" : "Completed"}><CheckCircle2 size={12} /> {item.completed_by}</button>
                       ) : (
-                        item.status !== 'Cancelled' && (
-                            <button onClick={() => initiateCompletion(item)} className="transition-colors p-1.5 rounded-md text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 border border-transparent hover:border-emerald-200" title="Mark as Completed">
-                                <CheckSquare size={16} />
-                            </button>
-                        )
+                        item.status !== 'Cancelled' && (<button onClick={() => initiateCompletion(item)} className="transition-colors p-1.5 rounded-md text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 border border-transparent hover:border-emerald-200" title="Mark as Completed"><CheckSquare size={16} /></button>)
                       )}
                   </td>
-
                   <td className="px-6 py-3 text-xs">
                       {item.bo_deleted_by ? (
-                        <button 
-                            onClick={() => handleUndoBOClean(item)}
-                            disabled={!isHighLevel}
-                            className={`flex items-center gap-1.5 text-purple-600 font-bold transition-all ${isHighLevel ? 'hover:text-red-600 cursor-pointer' : 'cursor-default'}`}
-                            title={isHighLevel ? "Click to UNDO BO Clean" : "BO Cleaned"}
-                        >
-                            <Eraser size={12} /> {item.bo_deleted_by}
-                        </button>
+                        <button onClick={() => handleUndoBOClean(item)} disabled={!isHighLevel} className={`flex items-center gap-1.5 text-purple-600 font-bold transition-all ${isHighLevel ? 'hover:text-red-600 cursor-pointer' : 'cursor-default'}`} title={isHighLevel ? "Click to UNDO BO Clean" : "BO Cleaned"}><Eraser size={12} /> {item.bo_deleted_by}</button>
                       ) : (
                         item.status === 'Completed' && (
                             isBOCleanupEnabled(item.completion_time) ? (
-                                <button onClick={() => handleConfirmBODeleted(item)} className="p-1.5 rounded-md bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all shadow-sm animate-pulse" title="Confirm BO 8.2 Deleted">
-                                    <Eraser size={16} />
-                                </button>
+                                <button onClick={() => handleConfirmBODeleted(item)} className="p-1.5 rounded-md bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all shadow-sm animate-pulse" title="Confirm BO 8.2 Deleted"><Eraser size={16} /></button>
                             ) : (
-                                <div className="flex items-center gap-1" title={`${120 - getMinutesSinceCompletion(item.completion_time)} mins remaining until unlock`}>
-                                    <button disabled className="p-1.5 rounded-md bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200">
-                                        <Eraser size={16} />
-                                    </button>
-                                    <Lock size={10} className="text-gray-300" />
-                                </div>
+                                <div className="flex items-center gap-1" title={`${120 - getMinutesSinceCompletion(item.completion_time)} mins remaining until unlock`}><button disabled className="p-1.5 rounded-md bg-gray-100 text-gray-300 cursor-not-allowed border border-gray-200"><Eraser size={16} /></button><Lock size={10} className="text-gray-300" /></div>
                             )
                         )
                       )}
                   </td>
-
                   <td className="px-6 py-3 text-center"><button onClick={() => toggleVerified(item.id, item.setup_confirmed)} className={`flex items-center justify-center gap-1 mx-auto transition-all ${!isHighLevel ? 'cursor-default' : 'hover:scale-110 active:scale-95'}`} title={item.setup_confirmed ? `Verified by ${item.verified_by_name}` : "Not Verified"}>{item.setup_confirmed ? <><ShieldCheck size={18} className="text-blue-600 fill-blue-50" />{!isHighLevel && <span className="text-[10px] font-bold text-gray-500">{item.verified_by_name}</span>}</> : <Shield size={18} className="text-gray-300" />}</button></td>
-                  
                   <td className="px-6 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        
-                        {/* --- 1. CLOCK BUTTON (For Resolution/Extension) --- */}
-                        {item.status !== 'Cancelled' && (
-                            <button 
-                                onClick={() => handleOpenResolution(item, 'extend')} 
-                                className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"
-                                title="Resolution / Extend Time"
-                            >
-                                <Clock size={15} />
-                            </button>
-                        )}
-
-                        {/* --- 2. EDIT BUTTON (Disabled if Started) --- */}
+                        {item.status !== 'Cancelled' && (<button onClick={() => handleOpenResolution(item, 'extend')} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Resolution / Extend Time"><Clock size={15} /></button>)}
                         {(() => {
-                            // Check current time vs start time directly
                             const isStarted = new Date() >= new Date(item.start_time);
-                            
-                            return (
-                                <button 
-                                    onClick={() => !isStarted && handleEdit(item)} 
-                                    disabled={isStarted} 
-                                    className={`p-1.5 rounded transition-colors ${
-                                        isStarted 
-                                        ? 'text-gray-300 cursor-not-allowed' // Greyed out if started
-                                        : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
-                                    }`}
-                                    title={isStarted ? "Maintenance Started. Use Extension." : "Edit"}
-                                >
-                                    <Edit2 size={15} />
-                                </button>
-                            );
+                            return (<button onClick={() => !isStarted && handleEdit(item)} disabled={isStarted} className={`p-1.5 rounded transition-colors ${isStarted ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`} title={isStarted ? "Maintenance Started. Use Extension." : "Edit"}><Edit2 size={15} /></button>);
                         })()}
-
                         {item.status !== 'Cancelled' && <button onClick={() => handleInitiateCancel(item)} className="text-gray-400 hover:text-orange-600 hover:bg-orange-50 p-1.5 rounded transition-colors" title="Cancel Maintenance"><Ban size={15} /></button>}
                         <button onClick={() => handleInitiateDelete(item)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Entry"><Trash2 size={15} /></button>
                       </div>
@@ -1016,52 +827,17 @@ const Dashboard = ({ session }) => {
           </table>
         </div>
         
-        {/* --- SCHEDULE MODAL --- */}
-        <ScheduleModal 
-            isOpen={isScheduleModalOpen} 
-            onClose={() => setIsScheduleModalOpen(false)} 
-            maintenances={maintenances}
-            onOpenEntryModal={handleOpenNewEntry}
-        />
-
+        <ScheduleModal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} maintenances={maintenances} onOpenEntryModal={handleOpenNewEntry} />
         <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} formData={formData} setFormData={setFormData} handleConfirm={handleConfirm} loading={loading} editingId={editingId} errors={errors} setErrors={setErrors} existingMaintenances={maintenances} />
         <CompletionModal isOpen={isCompletionModalOpen} onClose={() => setIsCompletionModalOpen(false)} onConfirm={confirmCompletion} item={completingItem} sopChecks={sopChecks} setSopChecks={setSopChecks} />
         <UserModal isOpen={isUserModalOpen} onClose={() => setIsUserModalOpen(false)} userTab={userTab} setUserTab={setUserTab} userList={userList} userForm={userForm} setUserForm={setUserForm} loading={loading} handleCreateUser={handleCreateUser} handleUpdateUser={handleUpdateUser} handleDeleteUser={handleDeleteUser} editingUser={editingUser} setEditingUser={setEditingUser} newUserCredentials={newUserCredentials} setNewUserCredentials={setNewUserCredentials} generatePassword={() => { const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"; let pass = ""; for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length)); setUserForm(prev => ({ ...prev, password: pass })); }} />
-        <DeleteModal 
-            isOpen={isDeleteModalOpen} 
-            onClose={() => setIsDeleteModalOpen(false)} 
-            onConfirm={handleConfirmDelete} 
-            onReject={handleRejectDelete} 
-            loading={loading} 
-            // This checks if it is a request (so the modal knows to show the "Keep" button)
-            isDeletionRequest={maintenances.find(m => m.id === deletingId)?.deletion_pending} 
-        />
-        <ResolutionModal 
-            isOpen={isResolutionModalOpen} 
-            onClose={() => setIsResolutionModalOpen(false)} 
-            item={resolvingItem} 
-            initialMode={resolutionInitialMode}
-            onExtend={handleExtendMaintenance} 
-            onComplete={handleProceedToCompletion} 
-            loading={loading} 
-        />
+        <DeleteModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleConfirmDelete} onReject={handleRejectDelete} loading={loading} isDeletionRequest={maintenances.find(m => m.id === deletingId)?.deletion_pending} />
+        <ResolutionModal isOpen={isResolutionModalOpen} onClose={() => setIsResolutionModalOpen(false)} item={resolvingItem} initialMode={resolutionInitialMode} onExtend={handleExtendMaintenance} onComplete={handleProceedToCompletion} loading={loading} />
         <CancellationModal isOpen={isCancellationModalOpen} onClose={() => setIsCancellationModalOpen(false)} item={cancellingItem} onConfirm={handleConfirmCancel} loading={loading} />
         <CancelRequestModal isOpen={isCancelRequestModalOpen} onClose={() => setIsCancelRequestModalOpen(false)} item={cancellingItem} onConfirm={handleRequestCancelConfirm} loading={loading} />
         <DeleteRequestModal isOpen={isDeleteRequestModalOpen} onClose={() => setIsDeleteRequestModalOpen(false)} item={deleteRequestId} onConfirm={handleRequestDeleteConfirm} loading={loading} />
         <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} userName={userProfile.work_name || 'User'} triggerNotification={triggerNotification} />
-        
-        <ConfirmationModal 
-          isOpen={!!actionConfig}
-          onClose={() => setActionConfig(null)}
-          onConfirm={() => executeAction(actionConfig?.type, actionConfig?.payload)}
-          config={{
-            title: actionConfig?.title || '',
-            message: actionConfig?.message || '',
-            type: actionConfig?.type?.includes('UNDO') ? 'warning' : actionConfig?.type === 'CONFIRM_BO_DELETE' ? 'danger' : 'info',
-            confirmText: actionConfig?.confirmText || 'Confirm'
-          }}
-          loading={loading}
-        />
+        <ConfirmationModal isOpen={!!actionConfig} onClose={() => setActionConfig(null)} onConfirm={() => executeAction(actionConfig?.type, actionConfig?.payload)} config={{ title: actionConfig?.title || '', message: actionConfig?.message || '', type: actionConfig?.type?.includes('UNDO') ? 'warning' : actionConfig?.type === 'CONFIRM_BO_DELETE' ? 'danger' : 'info', confirmText: actionConfig?.confirmText || 'Confirm' }} loading={loading} />
       </div>
     </LocalizationProvider>
   );

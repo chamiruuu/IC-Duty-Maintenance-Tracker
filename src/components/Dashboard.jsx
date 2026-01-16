@@ -282,8 +282,9 @@ const Dashboard = ({ session }) => {
               const currentM = parseInt(format(nowZoned, 'm', { timeZone: SHANGHAI_TZ }));
               const currentTimeValue = currentH + (currentM / 60);
 
-              // Define Shift Start Times (07:00, 14:00, 22:30)
-              const shiftBoundaries = [7.0, 14.0, 22.5];
+              // Define Shift Start Times (UTC+8)
+              // 07:00 (Morning), 14:45 (Afternoon), 22:45 (Night)
+              const shiftBoundaries = [7.0, 14.75, 22.75];
 
               shiftBoundaries.forEach(boundary => {
                   // Check if we are in the first 45 mins of a new shift
@@ -427,11 +428,20 @@ const Dashboard = ({ session }) => {
   const zonedTime = toZonedTime(currentTime, timeZone);
   
   const getGreeting = () => {
-    const h = parseInt(format(zonedTime, 'H', { timeZone }));
-    const m = parseInt(format(zonedTime, 'm', { timeZone }));
+    const h = parseInt(format(zonedTime, 'H', { timeZone })); 
+    const m = parseInt(format(zonedTime, 'm', { timeZone })); 
+    
+    // Convert time to decimal (e.g., 14:30 becomes 14.5)
+    const timeVal = h + (m / 60); 
     const name = userProfile.work_name || 'User';
-    if (h >= 7 && h < 14) return `Good Morning, ${name}`;
-    if ((h >= 14 && h < 22) || (h === 22 && m < 30)) return `Good Afternoon, ${name}`;
+
+    // 07:00 to 14:29 -> Morning
+    if (timeVal >= 7 && timeVal < 14.5) return `Good Morning, ${name}`;
+    
+    // 14:30 to 21:59 -> Afternoon
+    if (timeVal >= 14.5 && timeVal < 22) return `Good Afternoon, ${name}`;
+    
+    // 22:00 to 06:59 -> Night
     return `Good Night, ${name}`;
   };
 

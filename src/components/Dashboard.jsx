@@ -117,7 +117,6 @@ const Dashboard = ({ session }) => {
     endTime: null
   });
 
-  // --- INITIAL DATA & TIME SYNC ---
   // --- INITIAL DATA & TIME SYNC (HARDENED FOR BACKGROUND USE) ---
   useEffect(() => {
     fetchUserProfile();
@@ -308,7 +307,7 @@ const Dashboard = ({ session }) => {
                           const alertId = `${m.id}-shift-check-${format(nowZoned, 'yyyy-MM-dd')}-${boundary}`;
                           
                           if (!alertedRef.current.has(alertId)) {
-                              const script = `Hi Team, This is ${userProfile.work_name}. May we know if there is any update regarding the time when the urgent maintenance will conclude? Thank You.`;
+                              const script = `Hi ${m.provider}, this is the new shift taking over. Asking for an update regarding the urgent maintenance. Is there an estimated time for completion? Thank you.`;
                               
                               triggerNotification(
                                   `Shift Handover Check: ${m.provider}`, 
@@ -543,14 +542,6 @@ const Dashboard = ({ session }) => {
   };
   const handleProceedToCompletion = () => { setIsResolutionModalOpen(false); initiateCompletion(resolvingItem); };
   
-  const toggleVerified = async (id, currentStatus) => {
-    if (!isHighLevel) return; 
-    const newStatus = !currentStatus;
-    const verifiedBy = newStatus ? userProfile.work_name : null;
-    setMaintenances(prev => prev.map(m => m.id === id ? { ...m, setup_confirmed: newStatus, verified_by_name: verifiedBy } : m));
-    await supabase.from('maintenances').update({ setup_confirmed: newStatus, verified_by_name: verifiedBy }).eq('id', id);
-  };
-
   const initiateCompletion = (item) => {
     if (item.status === 'Completed' || item.status === 'Cancelled') {
       if(item.status === 'Completed' && !item.bo_deleted) return; 
@@ -656,17 +647,8 @@ const Dashboard = ({ session }) => {
       setIsModalOpen(false); setEditingId(null); setErrors({}); fetchMaintenances();
       
       // --- NEW: Generate Start Script for Urgent ---
-      if (!error) { 
-      setIsModalOpen(false); 
-      setEditingId(null); 
-      setErrors({}); 
-      fetchMaintenances();
-      
       // Just a simple success message. No button.
       triggerNotification('Success', `Maintenance entry ${editingId ? 'updated' : 'created'} successfully.`, 'success');
-    } else {
-      triggerNotification('Error', error.message, 'error');
-    }
     } else triggerNotification('Error', error.message, 'error');
   };
 
@@ -810,7 +792,7 @@ const Dashboard = ({ session }) => {
                 <th className="px-6 py-3 text-left">Recorder</th>
                 <th className="px-6 py-3 text-left">Completer</th>
                 <th className="px-6 py-3 text-left">BO Cleaner</th>
-                <th className="px-6 py-3 text-center">Verified</th>
+                {/* VERIFIED HEADER REMOVED */}
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -844,7 +826,7 @@ const Dashboard = ({ session }) => {
                         )
                       )}
                   </td>
-                  <td className="px-6 py-3 text-center"><button onClick={() => toggleVerified(item.id, item.setup_confirmed)} className={`flex items-center justify-center gap-1 mx-auto transition-all ${!isHighLevel ? 'cursor-default' : 'hover:scale-110 active:scale-95'}`} title={item.setup_confirmed ? `Verified by ${item.verified_by_name}` : "Not Verified"}>{item.setup_confirmed ? <><ShieldCheck size={18} className="text-blue-600 fill-blue-50" />{!isHighLevel && <span className="text-[10px] font-bold text-gray-500">{item.verified_by_name}</span>}</> : <Shield size={18} className="text-gray-300" />}</button></td>
+                  {/* VERIFIED CELL REMOVED */}
                   <td className="px-6 py-3 text-right">
                       <div className="flex justify-end gap-2">
                         {item.status !== 'Cancelled' && (<button onClick={() => handleOpenResolution(item, 'extend')} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Resolution / Extend Time"><Clock size={15} /></button>)}

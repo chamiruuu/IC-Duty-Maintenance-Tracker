@@ -698,12 +698,24 @@ const Dashboard = ({ session }) => {
 
   const getSortedMaintenances = (items) => {
     return [...items].sort((a, b) => {
-        const isAComplete = a.status === 'Completed'; const isBComplete = b.status === 'Completed';
-        if (isAComplete && !isBComplete) return 1; if (!isAComplete && isBComplete) return -1;
-        const isAUrgent = a.type === 'Urgent'; const isBUrgent = b.type === 'Urgent';
-        if (isAUrgent && !isBUrgent) return -1; if (!isAUrgent && isBUrgent) return 1;
-        const startA = new Date(a.start_time).getTime(); const startB = new Date(b.start_time).getTime();
+        const isAComplete = a.status === 'Completed'; 
+        const isBComplete = b.status === 'Completed';
+        
+        // --- CHANGE HERE: Move Completed items to the TOP (-1) instead of bottom (1) ---
+        if (isAComplete && !isBComplete) return -1; 
+        if (!isAComplete && isBComplete) return 1;
+        
+        // Secondary Sort: Urgent items
+        const isAUrgent = a.type === 'Urgent'; 
+        const isBUrgent = b.type === 'Urgent';
+        if (isAUrgent && !isBUrgent) return -1; 
+        if (!isAUrgent && isBUrgent) return 1;
+        
+        // Tertiary Sort: Time
+        const startA = new Date(a.start_time).getTime(); 
+        const startB = new Date(b.start_time).getTime();
         if (startA !== startB) return startA - startB;
+        
         return (a.end_time ? new Date(a.end_time).getTime() : 9999999999999) - (b.end_time ? new Date(b.end_time).getTime() : 9999999999999);
     });
   };

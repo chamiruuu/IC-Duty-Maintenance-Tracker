@@ -175,9 +175,23 @@ const EntryModal = ({
   const getPreviewId = (url) => { if (!url) return ''; const digits = url.replace(/\D/g, ''); return digits ? `CS-${digits}` : ''; };
 
   // Original generator for Scheduled items
+  // Generator for Scheduled & Cancelled items
   const generateScheduledScript = (part) => {
-    const { provider, startTime, endTime, isUntilFurtherNotice } = formData;
+    const { provider, startTime, endTime, isUntilFurtherNotice, type } = formData;
+    
+    // Safety check
     if (!provider || !startTime) return ""; 
+    
+    // --- 1. CANCELLED LOGIC ---
+    if (type === 'Cancelled') {
+        // Title: No brackets, just "Provider Cancel Maintenance"
+        if (part === 'title') return `${provider} Cancel Maintenance`;
+        
+        // Body: Date with Slashes (YYYY/MM/DD)
+        return startTime.format('YYYY/MM/DD'); 
+    }
+
+    // --- 2. SCHEDULED LOGIC ---
     const dStart = startTime.format('YYYY-MM-DD');
     const tStart = startTime.format('HH:mm');
     const tEnd = endTime ? endTime.format('HH:mm') : '';

@@ -9,8 +9,11 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
   if (!isOpen) return null;
 
   const today = new Date();
-  const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(startOfCurrentWeek, i));
+  
+  // --- UPDATED LOGIC: ROLLING 7-DAY VIEW ---
+  // Instead of starting from Monday (startOfWeek), we start from TODAY.
+  // This solves the issue of not seeing "Tomorrow" on Sundays.
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(today, i));
 
   // Helper to format Redmine ID
   const getRedmineId = (ticket) => ticket ? `CS-${ticket.toString().replace(/\D/g, '')}` : 'Ticket';
@@ -28,7 +31,8 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
               Weekly Schedule
             </h2>
             <p className="text-sm text-gray-500 font-medium mt-1">
-              Maintenance compliance overview for <span className="text-gray-900 font-bold">{format(startOfCurrentWeek, 'MMM d')} - {format(addDays(startOfCurrentWeek, 6), 'MMM d, yyyy')}</span>
+              {/* Updated Header Date Range to match the new Rolling View */}
+              Maintenance compliance overview for <span className="text-gray-900 font-bold">{format(weekDays[0], 'MMM d')} - {format(weekDays[6], 'MMM d, yyyy')}</span>
             </p>
           </div>
           <button 
@@ -46,12 +50,11 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
             {weekDays.map((date, i) => {
               const checklist = getChecklistForDate(date, maintenances);
               const isToday = checkIsToday(date);
+              // Since we start from Today, 'isPast' is theoretically irrelevant for the view, 
+              // but we keep the logic just in case you use navigation later.
               const isPast = date < new Date().setHours(0,0,0,0);
               const isEmpty = checklist.length === 0;
 
-              // Optional: Render empty days as "No Tasks" placeholders or hide them. 
-              // We will render them for a complete calendar look, but greyed out if empty.
-              
               return (
                 <div 
                   key={i} 

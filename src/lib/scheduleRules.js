@@ -20,7 +20,7 @@ export const WEEKLY_SCHEDULE = {
     ],
     3: [ // WEDNESDAY Target
         { name: "AWC", type: "weekly" },
-        { name: "Sexy Casino", type: "weekly" }, // <--- Added as a separate item
+        { name: "Sexy Casino", type: "weekly" },
         { name: "DG Casino", type: "weekly" },
         { name: "CQ9 Slots", type: "weekly" },
         { name: "RSG", type: "weekly" }

@@ -27,12 +27,9 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
       return dayjs().isAfter(dayjs(item.start_time));
   };
 
-  // --- UPDATE: Handle Initial Mode ---
   useEffect(() => {
     if (isOpen && item) {
-      // Use the passed mode (defaulting to 'select' if not provided)
       setMode(initialMode);
-      
       setExtensionType('time');
       setNewEndTime(dayjs(item.end_time).add(1, 'hour'));
       setChecklist({ boUpdate: false, notifyMerchant: false, internalNotify: false, redmineUpdate: false });
@@ -45,10 +42,7 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
 
   const getInternalGroupMsg = () => `Maintenance time update for ${item.provider}, BO8.2 announcement has been updated.`;
   
-  const getAnnouncementTitle = () => {
-    if (extensionType === 'notice') return `【${item.provider}】 maintenance extended until further notice`;
-    return `【${item.provider}】 maintenance extended to ${newEndTime?.format('HH:mm')} (GMT+8)`;
-  };
+  // --- REMOVED getAnnouncementTitle FUNCTION HERE ---
 
   const getAnnouncementBody = () => {
     const timeStr = extensionType === 'notice' ? "until further notice" : `${newEndTime?.format('YYYY-MM-DD HH:mm')} (GMT+8)`;
@@ -63,7 +57,6 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
 
   const toggleCheck = (key) => setChecklist(prev => ({ ...prev, [key]: !prev[key] }));
 
-  // --- REDESIGNED CHECKLIST BUTTON ---
   const renderStep = (key, number, text) => {
     const isChecked = checklist[key];
     return (
@@ -176,13 +169,29 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                         </div>
                         <div className="space-y-3">
                             <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2"><Send size={14} /> Messages to Copy</h5>
-                            <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400">FOR INTERNAL GROUP</label><div className="flex gap-2"><div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">{getInternalGroupMsg()}</div><CopyButton text={getInternalGroupMsg()} /></div></div>
-                            <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400">ANNOUNCEMENT TITLE</label><div className="flex gap-2"><div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">{getAnnouncementTitle()}</div><CopyButton text={getAnnouncementTitle()} /></div></div>
-                            <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400">ANNOUNCEMENT BODY</label><div className="flex gap-2"><div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 h-16 overflow-y-auto whitespace-pre-wrap">{getAnnouncementBody()}</div><CopyButton text={getAnnouncementBody()} /></div></div>
+                            
+                            {/* 1. INTERNAL GROUP MESSAGE */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400">FOR INTERNAL GROUP</label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">{getInternalGroupMsg()}</div>
+                                    <CopyButton text={getInternalGroupMsg()} />
+                                </div>
+                            </div>
+
+                            {/* --- REMOVED ANNOUNCEMENT TITLE SECTION HERE --- */}
+
+                            {/* 2. ANNOUNCEMENT BODY */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400">ANNOUNCEMENT BODY</label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 h-auto overflow-y-auto whitespace-pre-wrap">{getAnnouncementBody()}</div>
+                                    <CopyButton text={getAnnouncementBody()} />
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div className="flex gap-3 pt-2 border-t border-gray-100">
-                        {/* UPDATE: Logic for "Back" button based on initialMode */}
                         <button 
                             onClick={() => initialMode === 'extend' ? onClose() : setMode('select')} 
                             className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg"

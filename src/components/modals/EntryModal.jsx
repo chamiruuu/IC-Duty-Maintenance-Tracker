@@ -142,7 +142,11 @@ const EntryModal = ({
             return (m.provider === formData.provider) && (mDay === formDay);
         });
 
-        if (duplicateProvider) { newErrors.providerDuplicate = true; hasError = true; }
+        // --- UPDATE: Allow duplicate provider ONLY if type is 'Urgent' ---
+        if (duplicateProvider && formData.type !== 'Urgent') { 
+            newErrors.providerDuplicate = true; 
+            hasError = true; 
+        }
 
         if (!isCancelled && newTicket.length > 0) {
             const duplicateTicket = otherMaintenances.some(m => {

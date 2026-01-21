@@ -749,7 +749,7 @@ const Dashboard = ({ session }) => {
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <div className="min-h-screen bg-white text-gray-900 font-sans">
+      <div className="h-screen flex flex-col bg-white text-gray-900 font-sans overflow-hidden">
         <NotificationToast notifications={notifications} removeNotification={removeNotification} onSnooze={handleSnooze} />
         <header className="h-14 border-b border-gray-200 flex items-center justify-between px-6 bg-white sticky top-0 z-20">
           <div className="flex items-center gap-6">
@@ -789,14 +789,16 @@ const Dashboard = ({ session }) => {
           </div>
         </header>
 
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between">
+        <div className="px-6 py-4 shrink-0 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between">
           <div className="flex items-center gap-3"><h2 className="text-lg font-semibold text-gray-800">{view === 'pending' ? 'Pending Maintenance' : 'Maintenance History'}</h2><span className="bg-gray-200 text-gray-600 text-xs font-bold px-1.5 py-0.5 rounded-full">{filteredMaintenances.length}</span></div>
           <div className="flex items-center gap-3"><div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm"><span className={`relative flex h-2 w-2`}>{isConnected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}<span className={`relative inline-flex rounded-full h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></span></span><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{isConnected ? 'Connected' : 'Offline'}</span></div><button onClick={handleManualRefresh} className="p-1.5 bg-white border border-gray-300 rounded text-gray-600 hover:bg-gray-50"><RefreshCcw size={14} className={isRefreshing ? "animate-spin" : ""} /></button></div>
         </div>
 
-        <div className="w-full">
+        {/* TABLE WRAPPER: Added 'overscroll-none' for smoother touchpad scrolling */}
+        <div className="flex-1 w-full overflow-y-auto overscroll-none">
           <table className="w-full text-left text-sm border-collapse">
-            <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
+            {/* TABLE HEADER: Removed 'shadow-sm' */}
+            <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 <th className="px-6 py-3 w-12 text-center">#</th>
                 <th className="px-6 py-3">Redmine No</th>

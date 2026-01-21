@@ -38,7 +38,7 @@ import FeedbackModal from './modals/FeedbackModal';
 import ConfirmationModal from './modals/ConfirmationModal';
 import ScheduleModal from './modals/ScheduleModal'; 
 import { getChecklistForDate } from '../lib/scheduleRules'; 
-import { generateUrgentScript } from '../lib/scriptGenerator'; // <--- NEW IMPORT
+import { generateUrgentScript } from '../lib/scriptGenerator'; 
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/"; 
 
@@ -130,7 +130,7 @@ const Dashboard = ({ session }) => {
     // 2. Force Refresh on Network Reconnect
     const handleOnline = () => { 
         setIsConnected(true); 
-        fetchMaintenances(); // <--- NEW: Immediately sync data
+        fetchMaintenances(); 
         triggerNotification('System Online', 'Connection restored. Data updated.', 'success');
     };
     
@@ -142,7 +142,7 @@ const Dashboard = ({ session }) => {
     // 3. Force Refresh when Tab becomes Visible (User clicks back to tab)
     const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
-            fetchMaintenances(); // <--- NEW: Syncs if tab was backgrounded
+            fetchMaintenances();
         }
     };
 
@@ -163,7 +163,6 @@ const Dashboard = ({ session }) => {
       });
 
     // 5. SAFETY POLLING (Fallback Method) - Runs every 60s
-    // This ensures data updates even if WebSocket sleeps in background tab
     const pollingTimer = setInterval(() => {
         if (document.visibilityState === 'hidden') {
             fetchMaintenances();
@@ -287,15 +286,10 @@ const Dashboard = ({ session }) => {
               const shiftBoundaries = [7.0, 14.75, 22.75];
 
               shiftBoundaries.forEach(boundary => {
-                  // Check if we are in the first 45 mins of a new shift
-                  // e.g., if Now is 14:15, boundary is 14.0. Diff is 0.25.
                   const timeSinceShiftStart = currentTimeValue - boundary;
                   
                   if (timeSinceShiftStart >= 0 && timeSinceShiftStart < 0.75) {
                       // We are at the start of a shift!
-                      // Now check: Did the maintenance start BEFORE this shift began?
-                      
-                      // Create a Date object for this specific boundary today
                       const boundaryDate = toZonedTime(now, SHANGHAI_TZ);
                       boundaryDate.setHours(Math.floor(boundary));
                       boundaryDate.setMinutes((boundary % 1) * 60);
@@ -304,7 +298,6 @@ const Dashboard = ({ session }) => {
                       const maintenanceStart = toZonedTime(parseISO(m.start_time), SHANGHAI_TZ);
 
                       if (maintenanceStart < boundaryDate) {
-                          // Uniquely identify this specific check (Item ID + Date + ShiftHour)
                           const alertId = `${m.id}-shift-check-${format(nowZoned, 'yyyy-MM-dd')}-${boundary}`;
                           
                           if (!alertedRef.current.has(alertId)) {
@@ -321,7 +314,7 @@ const Dashboard = ({ session }) => {
                       }
                   }
               });
-              return; // Stop here, do not run standard scheduled checks
+              return; 
           }
 
           // 3. STANDARD SCHEDULED LOGIC (Fixed End Time)
@@ -814,7 +807,6 @@ const Dashboard = ({ session }) => {
                 <th className="px-6 py-3 text-left">Recorder</th>
                 <th className="px-6 py-3 text-left">Completer</th>
                 <th className="px-6 py-3 text-left">BO Cleaner</th>
-                {/* VERIFIED HEADER REMOVED */}
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -848,10 +840,22 @@ const Dashboard = ({ session }) => {
                         )
                       )}
                   </td>
-                  {/* VERIFIED CELL REMOVED */}
                   <td className="px-6 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        {item.status !== 'Cancelled' && (<button onClick={() => handleOpenResolution(item, 'extend')} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Resolution / Extend Time"><Clock size={15} /></button>)}
+                        {/* UPDATE: Extend Button Disabled Logic */}
+                        <button 
+                            onClick={() => handleOpenResolution(item, 'extend')}
+                            disabled={item.status === 'Completed' || item.status === 'Cancelled'}
+                            className={`p-1.5 rounded-md transition-all duration-200 ${
+                                item.status === 'Completed' || item.status === 'Cancelled'
+                                ? 'text-gray-200 cursor-not-allowed' 
+                                : 'text-blue-600 hover:bg-blue-50 hover:text-blue-700'
+                            }`}
+                            title={item.status === 'Completed' ? "Maintenance Completed" : "Extend Time"}
+                        >
+                            <Clock size={15} />
+                        </button>
+
                         {(() => {
                             const isStarted = new Date() >= new Date(item.start_time);
                             return (<button onClick={() => !isStarted && handleEdit(item)} disabled={isStarted} className={`p-1.5 rounded transition-colors ${isStarted ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`} title={isStarted ? "Maintenance Started. Use Extension." : "Edit"}><Edit2 size={15} /></button>);

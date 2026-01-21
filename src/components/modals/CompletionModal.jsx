@@ -33,6 +33,9 @@ const CompletionModal = ({
   const isUrgent = item.type && item.type.toLowerCase().includes('urgent');
   const isNotice = item.is_until_further_notice;
   const showRobotNotify = isUrgent || isNotice;
+  
+  // --- NEW: DETECT EXTENDED MAINTENANCE ---
+  const isExtended = item.type === 'Extended Maintenance' || item.is_until_further_notice;
 
   // --- FIXED EARLY DETECTION LOGIC ---
   const scheduledEnd = item.end_time 
@@ -53,13 +56,22 @@ const CompletionModal = ({
   };
 
   // --- 1. SCRIPT GENERATION ---
+  // --- 1. SCRIPT GENERATION (UPDATED) ---
   const getFinishContent = () => {
+    // If it's an Extended Maintenance (Estimated Time OR Until Further Notice)
+    if (isExtended) {
+        return `Hello there\nPlease be informed that 【${item.provider}】 extend maintenance has been completed.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+    }
+
+    // Standard Logic for Scheduled / Urgent
     const typeText = isUrgent ? 'urgent maintenance' : 'scheduled maintenance';
     return `Hello there, \nPlease be informed that 【${item.provider}】 ${typeText} has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
   };
 
   const getManualOpenMsg = () => {
-      return `maintenance for ${item.provider}, have completed before the scheduled end time. Please help to open. Thank You.`;
+      // Update: Dynamic message. If early, say "before scheduled time". If just extended, say "completed".
+      const reason = isEarly ? "have completed before the scheduled end time" : "maintenance has been completed";
+      return `maintenance for ${item.provider}, ${reason}. Please help to open. Thank You.`;
   };
 
   // --- 2. CONFIRM HANDLER ---
@@ -114,22 +126,26 @@ const CompletionModal = ({
   if (isEarly) {
       canConfirm = sopChecks.manualOpen && sopChecks.functionalCheck && sopChecks.announcements;
   } else {
-      canConfirm = sopChecks.gameTest && sopChecks.documentation && (!showRobotNotify || sopChecks.robotNotify);
+      // Normal Completion Validation
+      // If it is Extended, we mandate the manualOpen check as well.
+      canConfirm = sopChecks.gameTest && 
+                   sopChecks.documentation && 
+                   (!showRobotNotify || sopChecks.robotNotify) &&
+                   (!isExtended || sopChecks.manualOpen); // <--- NEW: Require manual open check if Extended
   }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 flex flex-col max-h-[90vh]">
-          
-          {/* Header */}
-          <div className={`px-6 py-5 border-b border-gray-200 shrink-0 ${isEarly ? 'bg-orange-50' : (isUrgent ? 'bg-amber-50' : 'bg-gray-50')}`}>
+         
+         {/* Header */}
+         <div className={`px-6 py-5 border-b border-gray-200 shrink-0 ${isEarly ? 'bg-orange-50' : (isUrgent ? 'bg-amber-50' : 'bg-gray-50')}`}>
              <div className="flex items-start justify-between">
                 <div>
                    <h3 className={`text-lg font-bold tracking-tight flex items-center gap-2 ${isEarly ? 'text-orange-800' : (isUrgent ? 'text-amber-800' : 'text-gray-900')}`}>
                      {isEarly ? <AlertTriangle size={20} className="text-orange-600"/> : (isUrgent ? <AlertTriangle size={20} className="text-amber-600"/> : <ShieldCheck className="text-emerald-600" size={20} />)} 
                      {isEarly ? 'Early Completion Warning' : (isUrgent ? 'Urgent Completion' : 'Verify Completion')}
                    </h3>
-                   {/* --- UPDATED WARNING TEXT WITH TIME --- */}
                    <p className="text-xs text-gray-500 mt-1">
                       {isEarly 
                         ? <>Closing at <span className="font-bold font-mono text-orange-700">{completionTime ? completionTime.format('HH:mm') : ''}</span> ({getFormattedEarlyTime()} early). Manual verification required.</>
@@ -140,10 +156,10 @@ const CompletionModal = ({
                    {getRedmineDisplayId(item.redmine_ticket)}
                 </div>
              </div>
-          </div>
-          
-          {/* Scrollable Content */}
-          <div className="p-6 overflow-y-auto space-y-6">
+         </div>
+         
+         {/* Scrollable Content */}
+         <div className="p-6 overflow-y-auto space-y-6">
              
              {/* 1. Time Selection */}
              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
@@ -195,6 +211,15 @@ const CompletionModal = ({
                      </>
                  ) : (
                      <>
+                        {/* --- NEW: Add Manual Open for Extended Maintenance --- */}
+                        {isExtended && renderCheckItem(
+                            'manualOpen', 
+                            'Manual Game Open (Note 1)', 
+                            'Maintenance was extended. Manually open game & confirm.', 
+                            <PlayCircle size={16} />,
+                            getManualOpenMsg()
+                        )}
+
                         {renderCheckItem(
                             'gameTest', 
                             'Game & Transfer Test', 
@@ -234,10 +259,10 @@ const CompletionModal = ({
                 </div>
              </div>
 
-          </div>
+         </div>
 
-          {/* Footer */}
-          <div className="p-6 bg-gray-50 border-t border-gray-200 flex flex-col gap-4 shrink-0">
+         {/* Footer */}
+         <div className="p-6 bg-gray-50 border-t border-gray-200 flex flex-col gap-4 shrink-0">
              <div className="flex items-center gap-2 text-[10px] text-gray-400 justify-center">
                 <Clock size={10} />
                 <span>Completion timestamp: <strong>{completionTime ? completionTime.format('HH:mm:ss') : '--:--'} (UTC+8)</strong></span>
@@ -252,7 +277,7 @@ const CompletionModal = ({
                    {isEarly ? 'Confirm Early Completion' : 'Confirm Completion'} <ArrowRight size={14} />
                 </button>
              </div>
-          </div>
+         </div>
        </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, Clock, Loader2, AlertTriangle, FileText, Send, Check } from 'lucide-react';
+import { X, CheckCircle2, Clock, Loader2, AlertTriangle, FileText, Send, Check, Lock } from 'lucide-react';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import dayjs from 'dayjs';
@@ -15,7 +15,15 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
   const [extensionType, setExtensionType] = useState('time'); 
   const [newEndTime, setNewEndTime] = useState(null);
   
+  // --- LATE EXTENSION LOGIC ---
+  // If current time is within 5 minutes of End Time (or passed it), it's a "Late Extension"
+  const now = dayjs();
+  const endTime = item ? dayjs(item.end_time) : dayjs();
+  const minutesRemaining = endTime.diff(now, 'minute');
+  const isLateExtension = minutesRemaining <= 5;
+
   const [checklist, setChecklist] = useState({
+    manualClose: false, // New check for Late Extensions
     boUpdate: false,
     notifyMerchant: false,
     internalNotify: false,
@@ -32,13 +40,30 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
       setMode(initialMode);
       setExtensionType('time');
       setNewEndTime(dayjs(item.end_time).add(1, 'hour'));
-      setChecklist({ boUpdate: false, notifyMerchant: false, internalNotify: false, redmineUpdate: false });
+      // Reset checks
+      setChecklist({ 
+          manualClose: false, 
+          boUpdate: false, 
+          notifyMerchant: false, 
+          internalNotify: false, 
+          redmineUpdate: false 
+      });
     }
   }, [isOpen, item, initialMode]);
 
   if (!isOpen || !item) return null;
 
-  const isSopComplete = checklist.boUpdate && checklist.notifyMerchant && checklist.internalNotify && checklist.redmineUpdate;
+  // --- VALIDATION: Require 'manualClose' ONLY if it is a Late Extension ---
+  const isSopComplete = 
+      (!isLateExtension || checklist.manualClose) && // Conditional Check
+      checklist.boUpdate && 
+      checklist.internalNotify && // Internal first (step 2)
+      checklist.notifyMerchant && // Merchant second (step 3)
+      checklist.redmineUpdate;
+
+  const getManualCloseMsg = () => {
+      return `Urgent: Maintenance for ${item.provider} has been extended at the last minute. Please help to manually close the game immediately to prevent auto-open. Thank You.`;
+  };
 
   const getInternalGroupMsg = () => `Maintenance time update for ${item.provider}, BO8.2 announcement has been updated.`;
   
@@ -57,30 +82,44 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
 
   const toggleCheck = (key) => setChecklist(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const renderStep = (key, number, text) => {
+  const renderStep = (key, number, text, icon = null, isCritical = false, copyText = null) => {
     const isChecked = checklist[key];
+    const baseBorder = isCritical ? 'border-red-100 hover:border-red-300' : 'border-gray-100 hover:border-blue-200';
+    const checkedBorder = isCritical ? 'border-red-500 bg-red-50' : 'border-emerald-500 bg-emerald-50/80';
+    const checkedIconBg = isCritical ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white';
+    
     return (
         <div 
             onClick={() => toggleCheck(key)}
             className={`relative flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 group select-none ${
                 isChecked 
-                ? 'bg-emerald-50/80 border-emerald-500 shadow-emerald-100 shadow-md transform scale-[1.01]' 
-                : 'bg-white border-gray-100 hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5'
+                ? `${checkedBorder} shadow-md transform scale-[1.01]` 
+                : `bg-white ${baseBorder} hover:shadow-lg hover:-translate-y-0.5`
             }`}
         >
             <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-500 ${
                 isChecked 
-                ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-200 scale-110 rotate-0' 
+                ? `${checkedIconBg} shadow-lg scale-110 rotate-0` 
                 : 'bg-gray-100 text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-500 rotate-0'
             }`}>
-                {isChecked ? <Check size={20} strokeWidth={3} /> : <span className="text-sm font-bold font-mono">{number}</span>}
+                {isChecked ? <Check size={20} strokeWidth={3} /> : (icon || <span className="text-sm font-bold font-mono">{number}</span>)}
             </div>
-            <div className={`flex-1 transition-colors duration-300 ${isChecked ? 'text-emerald-900' : 'text-gray-600'}`}>
-                <span className="text-xs leading-relaxed font-medium block">{text}</span>
+            
+            <div className={`flex-1 transition-colors duration-300 ${isChecked ? 'text-gray-900' : 'text-gray-600'}`}>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs leading-relaxed font-medium block">{text}</span>
+                    {/* Render Copy Button if copyText is provided */}
+                    {copyText && (
+                        <div onClick={(e) => e.stopPropagation()} title="Copy Message">
+                            <CopyButton text={copyText} size={14} className="text-gray-400 hover:text-black bg-white border border-gray-200 p-1 rounded-md shadow-sm" />
+                        </div>
+                    )}
+                </div>
             </div>
+
             {isChecked && (
-                <div className="absolute top-2 right-2 text-emerald-500 opacity-20 animate-in fade-in zoom-in">
-                    <CheckCircle2 size={16} />
+                <div className="absolute top-2 right-2 opacity-20 animate-in fade-in zoom-in">
+                    <CheckCircle2 size={16} className={isCritical ? 'text-red-600' : 'text-emerald-500'} />
                 </div>
             )}
         </div>
@@ -104,7 +143,14 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                     <h4 className="font-bold text-lg text-gray-900">{item.provider}</h4>
                     <p className="text-xs text-gray-500">Scheduled End: {dayjs(item.end_time).format('YYYY-MM-DD HH:mm')}</p>
                 </div>
-                <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse">Action Required</span>
+                <div className="text-right">
+                    <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse">Action Required</span>
+                    {mode === 'extend' && isLateExtension && (
+                        <p className="text-[10px] font-bold text-red-600 mt-1 flex items-center justify-end gap-1">
+                            <AlertTriangle size={10} /> Late Extension (&lt;5m)
+                        </p>
+                    )}
+                </div>
             </div>
 
             {mode === 'select' && (
@@ -161,15 +207,30 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                         <div className="space-y-3">
                             <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2"><FileText size={14} /> SOP Checklist <span className="text-red-500">*</span></h5>
                             <div className="space-y-2">
+                                {/* Late Extension Check - Removed copyText from here */}
+                                {isLateExtension && renderStep('manualClose', '!', <><strong>CRITICAL: Manual Game Close</strong><br/>Late extension. Manually close game to prevent auto-open.</>, <Lock size={16} />, true)}
+
+                                {/* Reordered Steps */}
                                 {renderStep('boUpdate', '1', <>Update <strong>BO8.2</strong> Announcement.<br/>{extensionType === 'notice' ? 'Check "Until Further Notice".' : 'Update the "End Time".'}</>)}
-                                {renderStep('notifyMerchant', '2', <>Notify Merchant via Robot's BO Select:<br/><strong>【IC-Maintenance&Promo of providers】</strong></>)}
-                                {renderStep('internalNotify', '3', <>Notify <strong>IP Internal Group</strong>.<br/>(Use copy text on right)</>)}
+                                {renderStep('internalNotify', '2', <>Notify <strong>IP Internal Group</strong>.<br/>(Use copy text on right)</>)}
+                                {renderStep('notifyMerchant', '3', <>Notify Merchant via Robot's BO Select:<br/><strong>【IC-Maintenance&Promo of providers】</strong></>)}
                                 {renderStep('redmineUpdate', '4', <>Update <strong>Redmine & Sync BO8.7</strong>.</>)}
                             </div>
                         </div>
                         <div className="space-y-3">
                             <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2"><Send size={14} /> Messages to Copy</h5>
                             
+                            {/* --- MOVED: MANUAL CLOSE MSG (Only shows if Late Extension) --- */}
+                            {isLateExtension && (
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-red-500 animate-pulse">MANUAL CLOSE MSG (CRITICAL)</label>
+                                    <div className="flex gap-2">
+                                        <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">{getManualCloseMsg()}</div>
+                                        <CopyButton text={getManualCloseMsg()} />
+                                    </div>
+                                </div>
+                            )}
+
                             {/* 1. INTERNAL GROUP MESSAGE */}
                             <div className="space-y-1">
                                 <label className="text-[10px] font-bold text-gray-400">FOR INTERNAL GROUP</label>
@@ -179,13 +240,11 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                                 </div>
                             </div>
 
-                            {/* --- REMOVED ANNOUNCEMENT TITLE SECTION HERE --- */}
-
                             {/* 2. ANNOUNCEMENT BODY */}
                             <div className="space-y-1">
                                 <label className="text-[10px] font-bold text-gray-400">ANNOUNCEMENT BODY</label>
                                 <div className="flex gap-2">
-                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 h-auto overflow-y-auto whitespace-pre-wrap">{getAnnouncementBody()}</div>
+                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 h-16 overflow-y-auto whitespace-pre-wrap">{getAnnouncementBody()}</div>
                                     <CopyButton text={getAnnouncementBody()} />
                                 </div>
                             </div>

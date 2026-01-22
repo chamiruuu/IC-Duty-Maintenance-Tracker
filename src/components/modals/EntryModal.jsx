@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search, Check, Copy } from 'lucide-react';
+import { X, Link as LinkIcon, Loader2, AlertCircle, ChevronDown, Search, Check, Copy, Info } from 'lucide-react';
 import CopyButton from '../CopyButton';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -32,6 +32,9 @@ const EntryModal = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   
+  // --- NEW: Local State for Part of the Game ---
+  const [isPartGame, setIsPartGame] = useState(false);
+
   const [showRescheduleSop, setShowRescheduleSop] = useState(false);
   const [rescheduleChecklist, setRescheduleChecklist] = useState({ internal: false, boSync: false });
   
@@ -41,13 +44,72 @@ const EntryModal = ({
   const [urgentScript, setUrgentScript] = useState({ title: '', startMessage: '' });
   const [initialTimes, setInitialTimes] = useState({ start: null, end: null });
 
+  // --- HELPER: Generate Part of the Game Scripts ---
+  const generatePartGameScript = (isUrgentMode) => {
+      const { provider, startTime, endTime, isUntilFurtherNotice, affectedGames } = formData;
+      if (!provider || !startTime) return { title: '', body: '' };
+
+      const games = (affectedGames || '').split('\n').filter(g => g.trim());
+      const isMultiple = games.length > 1;
+      const gameName = games[0] ? games[0].trim() : "Game Name";
+      
+      // If Multiple: "Provider-part of the game", Else: "Provider-GameName"
+      const subjectName = isMultiple ? `${provider}-part of the game` : `${provider}-${gameName}`;
+      
+      const dStart = startTime.format('YYYY-MM-DD');
+      const tStart = startTime.format('HH:mm');
+      const tEnd = endTime ? endTime.format('HH:mm') : '';
+      
+      let title = '';
+      let body = '';
+
+      if (isUrgentMode) {
+          // URGENT SCRIPTS
+          if (isUntilFurtherNotice) {
+              title = `【${subjectName}】【Urgent Maintenance】until further notice(from ${dStart} ${tStart})`;
+              body = `Hello there,\nPlease be informed that【${subjectName}】 is going urgent maintenance until further notice,during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+          } else {
+              title = `【${subjectName}】【Urgent Maintenance】on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
+              body = `Hello there,\nPlease be informed that【${subjectName}】 is going urgent maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8) , during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+          }
+      } else {
+          // SCHEDULED SCRIPTS
+          if (isUntilFurtherNotice) {
+              title = `【${subjectName}】scheduled to have system maintenance on ${dStart}(GMT+8), and the end time will be until further notice.`;
+              body = `Hello there,\nPlease be informed that【${subjectName}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8), and the end time will be until further notice. During the period,other games can be able to access and the game  lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+          } else {
+              title = `【${subjectName}】scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
+              body = `Hello there,\nPlease be informed that 【${subjectName}】scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd} (GMT+8), during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+          }
+      }
+
+      // Append Game List if Multiple
+      if (isMultiple) {
+          body += `\nAffected game list :\n\n${games.map(g => `【${g.trim()}】`).join('\n')}`;
+      }
+
+      return { title, startMessage: body, body }; 
+  };
+
+  // --- LOGIC: Sync formData with UI state ---
+  const currentTypeStr = formData.type || 'Scheduled';
+  const isUrgent = currentTypeStr.includes('Urgent');
+  const isCancelled = currentTypeStr === 'Cancelled';
+  
+  // Logic to lock the Confirm button if Urgent checks aren't met
+  const isUrgentLocked = isUrgent && (!urgentChecks.internal || !urgentChecks.bo82 || !urgentChecks.redmine);
+
   // Update Urgent Script whenever form data changes
   useEffect(() => {
-    if (formData.type === 'Urgent') {
-        const script = generateUrgentScript(formData);
-        setUrgentScript(script);
+    if (isUrgent) {
+        if (isPartGame) {
+             setUrgentScript(generatePartGameScript(true));
+        } else {
+             const script = generateUrgentScript(formData);
+             setUrgentScript(script);
+        }
     }
-  }, [formData]);
+  }, [formData, isPartGame, isUrgent]); 
 
   useEffect(() => {
     if (isOpen) {
@@ -55,10 +117,13 @@ const EntryModal = ({
         setErrors({});
         setShowRescheduleSop(false);
         setRescheduleChecklist({ internal: false, boSync: false });
-        
-        // Reset Urgent Checks on open
         setUrgentChecks({ internal: false, bo82: false, redmine: false });
         
+        // --- INITIALIZE IS_PART_GAME FROM SAVED DATA ---
+        const typeStr = formData.type || 'Scheduled';
+        const isPg = typeStr.includes('Part of the Game') || !!formData.affectedGames;
+        setIsPartGame(isPg);
+
         if (editingId) {
             const fmt = 'YYYY-MM-DD HH:mm';
             setInitialTimes({ 
@@ -69,7 +134,7 @@ const EntryModal = ({
             setInitialTimes({ start: null, end: null });
         }
     }
-  }, [isOpen, editingId]);
+  }, [isOpen, editingId]); 
 
   useEffect(() => {
     if (editingId && initialTimes.start) {
@@ -100,12 +165,6 @@ const EntryModal = ({
 
   if (!isOpen) return null;
 
-  const isCancelled = formData.type === 'Cancelled';
-  const isUrgent = formData.type === 'Urgent';
-  
-  // Logic to lock the Confirm button if Urgent checks aren't met
-  const isUrgentLocked = isUrgent && (!urgentChecks.internal || !urgentChecks.bo82 || !urgentChecks.redmine);
-  
   const filteredProviders = PROVIDERS.filter(p => p.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleProviderSelect = (provider) => {
@@ -115,11 +174,41 @@ const EntryModal = ({
       setErrors({ ...errors, provider: false, providerDuplicate: false, providerInvalid: false });
   };
 
+  // --- HANDLER: Type Change (Dropdown) ---
+  const handleTypeChange = (e) => {
+      const newBase = e.target.value; 
+      let newTypeStr = newBase;
+      
+      if (newBase === 'Cancelled') {
+          setErrors({});
+      } else {
+          if (isPartGame) {
+              newTypeStr = newBase === 'Urgent' ? 'Part of the Game (Urgent)' : 'Part of the Game';
+          }
+      }
+      setFormData({ ...formData, type: newTypeStr });
+  };
+
+  // --- HANDLER: Part of Game Toggle ---
+  const handlePartGameChange = (e) => {
+      const checked = e.target.checked;
+      setIsPartGame(checked);
+      
+      const baseUrgent = formData.type.includes('Urgent');
+      
+      if (checked) {
+          const newStr = baseUrgent ? 'Part of the Game (Urgent)' : 'Part of the Game';
+          setFormData({ ...formData, type: newStr });
+      } else {
+          const newStr = baseUrgent ? 'Urgent' : 'Scheduled';
+          setFormData({ ...formData, type: newStr, isInHouse: false, affectedGames: '' });
+      }
+  };
+
   const validateAndConfirm = () => {
     if (showRescheduleSop) {
         if (!rescheduleChecklist.internal || !rescheduleChecklist.boSync) return;
     }
-    // Safety check for Urgent
     if (isUrgentLocked) return;
 
     const newErrors = {};
@@ -132,6 +221,10 @@ const EntryModal = ({
     if (!formData.startTime) { newErrors.startTime = true; hasError = true; }
     if (!formData.isUntilFurtherNotice && !isCancelled && !formData.endTime) { newErrors.endTime = true; hasError = true; }
 
+    if (isPartGame && !formData.affectedGames?.trim()) {
+        newErrors.affectedGames = true; hasError = true;
+    }
+
     if (existingMaintenances && !hasError && !editingId) {
         const formDay = dayjs(formData.startTime).tz("Asia/Shanghai").format('YYYY-MM-DD');
         const newTicket = formData.redmineLink ? formData.redmineLink.replace(/\D/g, '') : ''; 
@@ -142,8 +235,7 @@ const EntryModal = ({
             return (m.provider === formData.provider) && (mDay === formDay);
         });
 
-        // --- UPDATE: Allow duplicate provider ONLY if type is 'Urgent' ---
-        if (duplicateProvider && formData.type !== 'Urgent') { 
+        if (duplicateProvider && !isUrgent) { 
             newErrors.providerDuplicate = true; 
             hasError = true; 
         }
@@ -178,24 +270,21 @@ const EntryModal = ({
 
   const getPreviewId = (url) => { if (!url) return ''; const digits = url.replace(/\D/g, ''); return digits ? `CS-${digits}` : ''; };
 
-  // Original generator for Scheduled items
-  // Generator for Scheduled & Cancelled items
   const generateScheduledScript = (part) => {
     const { provider, startTime, endTime, isUntilFurtherNotice, type } = formData;
-    
-    // Safety check
     if (!provider || !startTime) return ""; 
     
-    // --- 1. CANCELLED LOGIC ---
     if (type === 'Cancelled') {
-        // Title: No brackets, just "Provider Cancel Maintenance"
         if (part === 'title') return `${provider} Cancel Maintenance`;
-        
-        // Body: Date with Slashes (YYYY/MM/DD)
         return startTime.format('YYYY/MM/DD'); 
     }
 
-    // --- 2. SCHEDULED LOGIC ---
+    if (isPartGame) {
+        const scriptData = generatePartGameScript(false); 
+        if (part === 'title') return scriptData.title;
+        return scriptData.body;
+    }
+
     const dStart = startTime.format('YYYY-MM-DD');
     const tStart = startTime.format('HH:mm');
     const tEnd = endTime ? endTime.format('HH:mm') : '';
@@ -210,11 +299,19 @@ const EntryModal = ({
   };
 
   const getInternalUpdateMsg = () => `Maintenance time update for ${formData.provider}, BO8.2 announcement has been updated.`;
-  
-  // --- NEW: Urgent Internal Message Generator ---
-  const getUrgentInternalMsg = () => `Urgent Maintenance: ${formData.provider || 'Provider'} - Please assist to close the game.`;
+  const getUrgentInternalMsg = () => {
+      if (isPartGame) return `Urgent Maintenance: ${formData.provider || 'Provider'} - Part of the Game (Lobby Remains Open).`;
+      return `Urgent Maintenance: ${formData.provider || 'Provider'} - Please assist to close the game.`;
+  };
   
   const inputStyle = (isError) => `w-full bg-white border text-gray-900 text-sm rounded-sm px-3 py-2 outline-none transition-all ${isError ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-black'}`;
+
+  const getProviderHint = () => {
+      if(formData.provider === 'Pragmatic Play') return { text: 'For Reel Kingdom games, list them text-only.', link: 'https://snipboard.io/h6JWba.jpg' };
+      if(formData.provider === 'PT Slots') return { text: 'For GPAS games, list them text-only.', link: 'https://snipboard.io/uDgQrB.jpg' };
+      return null;
+  };
+  const providerHint = getProviderHint();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
@@ -288,19 +385,50 @@ const EntryModal = ({
             <div className="grid grid-cols-2 gap-4">
                <div>
                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">Type</label>
-                   <select className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-sm px-3 py-2 outline-none focus:border-black" value={formData.type} onChange={(e) => { const newType = e.target.value; setFormData({...formData, type: newType}); if(newType === 'Cancelled') setErrors({}); }}>
+                   <select 
+                        className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-sm px-3 py-2 outline-none focus:border-black" 
+                        value={isCancelled ? 'Cancelled' : (isUrgent ? 'Urgent' : 'Scheduled')} 
+                        onChange={handleTypeChange}
+                   >
                         <option value="Scheduled">Scheduled</option>
                         <option value="Urgent">Urgent</option>
                         <option value="Cancelled">Cancelled</option>
                    </select>
                </div>
-               <div className="flex items-end pb-2">
-                   <label className={`flex items-center gap-2 cursor-pointer ${formData.type === 'Cancelled' ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                       <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-black focus:ring-black" checked={formData.isUntilFurtherNotice} disabled={formData.type === 'Cancelled'} onChange={(e) => { setFormData({...formData, isUntilFurtherNotice: e.target.checked}); if(e.target.checked) setErrors({...errors, endTime: false}); }} />
+               <div className="flex flex-col gap-2 pb-1">
+                   <label className={`flex items-center gap-2 cursor-pointer ${isCancelled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                       <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-black focus:ring-black" checked={formData.isUntilFurtherNotice} disabled={isCancelled} onChange={(e) => { setFormData({...formData, isUntilFurtherNotice: e.target.checked}); if(e.target.checked) setErrors({...errors, endTime: false}); }} />
                        <span className="text-xs font-medium text-gray-700">Until Further Notice</span>
                    </label>
+                   
+                   <label className={`flex items-center gap-2 cursor-pointer ${isCancelled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                       <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-purple-600 focus:ring-purple-600" checked={isPartGame} disabled={isCancelled} onChange={handlePartGameChange} />
+                       <span className="text-xs font-bold text-purple-700">Part of the Game</span>
+                   </label>
+
+                   {isPartGame && (
+                       <label className="flex items-center gap-2 cursor-pointer animate-in fade-in slide-in-from-left-2">
+                           <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-gray-600 focus:ring-gray-600" checked={formData.isInHouse || false} onChange={(e) => setFormData({...formData, isInHouse: e.target.checked})} />
+                           <span className="text-xs font-medium text-gray-500">Restricted / In-House</span>
+                       </label>
+                   )}
                </div>
             </div>
+
+            {isPartGame && (
+                <div className="animate-in fade-in slide-in-from-top-2">
+                    <div className="flex justify-between mb-1.5">
+                        <label className="block text-xs font-semibold text-gray-500">Affected Games (One per line) *</label>
+                        {providerHint && <a href={providerHint.link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 flex items-center gap-1 hover:underline"><Info size={10}/> {providerHint.text}</a>}
+                    </div>
+                    <textarea 
+                        className={`${inputStyle(errors.affectedGames)} h-24 font-mono text-xs`} 
+                        placeholder="E.g.\nSweet Bonanza\nGate of Olympus"
+                        value={formData.affectedGames || ''}
+                        onChange={(e) => { setFormData({...formData, affectedGames: e.target.value}); setErrors({...errors, affectedGames: false}); }}
+                    />
+                </div>
+            )}
 
             {isCancelled ? (
                 <div>
@@ -350,8 +478,8 @@ const EntryModal = ({
             )}
           </div>
 
-          {/* RIGHT PANEL: SCRIPTS & SOPs */}
-          <div className={`w-1/2 p-6 flex flex-col overflow-y-auto ${isUrgent ? 'bg-red-50' : 'bg-gray-50'}`}>
+          {/* RIGHT PANEL: SCRIPTS & SOPs - UPDATED CLASSNAME */}
+          <div className={`w-1/2 p-6 flex flex-col ${isUrgent ? 'overflow-y-auto bg-red-50' : 'overflow-hidden bg-gray-50'}`}>
               
               {isUrgent ? (
                   // --- URGENT LAYOUT ---
@@ -361,44 +489,42 @@ const EntryModal = ({
                           <h3 className="text-xs font-bold text-red-800 uppercase tracking-widest">Urgent SOP & Scripts</h3>
                       </div>
 
-                      {/* --- UPDATE: Interactive Checklist --- */}
+                      {/* --- CHECKLIST --- */}
                       <div className="bg-white border border-red-100 rounded-lg p-3 shadow-sm space-y-2">
                           <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-1">Required SOP Actions</h4>
                           
-                          {/* Item 1: Notify Internal (With Detailed Contact Info) */}
+                          {/* Item 1: Notify Internal */}
                           <div onClick={() => setUrgentChecks(prev => ({...prev, internal: !prev.internal}))} className={`flex flex-col gap-2 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.internal ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
                               <div className="flex items-center gap-3">
                                   <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.internal ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
                                       {urgentChecks.internal && <Check size={10} className="text-white" strokeWidth={4} />}
                                   </div>
-                                  <span className={`text-xs ${urgentChecks.internal ? 'text-red-900 font-medium' : 'text-gray-600'}`}>Notify Leader & Request Open/Close</span>
-                              </div>
-                              
-                              <div className="pl-7 text-[10px] text-gray-500 space-y-1 border-l-2 border-red-100 ml-2">
-                                  <p><strong>Business Hours (Mon-Fri 10AM-7PM):</strong></p>
-                                  <p className="text-gray-400">IP Group (Carmen) &gt; IC.CS-Support Group</p>
-                                  <p className="mt-1"><strong>Non-Business Hours / Holidays:</strong></p>
-                                  <p className="text-gray-400">Contact QQ288 Support (Open/Close Game Group)</p>
-                              </div>
+                                  
+                                  {/* --- UPDATE THIS SPAN --- */}
+                                  <span className={`text-xs ${urgentChecks.internal ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
+                                      {isPartGame ? "Notify Leader (Lobby Remains Open)" : "Notify Leader & Request Open/Close"}
+                                  </span>
+                                  {/* ------------------------ */}
 
-                              {/* NEW: Copy Button for Internal Group Message */}
+                              </div>
                               <div className="pl-7 mt-1" onClick={(e) => e.stopPropagation()}>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Message to Group</label>
                                 <div className="flex gap-2 mt-1">
-                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">
-                                        {getUrgentInternalMsg()}
-                                    </div>
+                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">{getUrgentInternalMsg()}</div>
                                     <CopyButton text={getUrgentInternalMsg()} label="COPY" />
                                 </div>
                               </div>
                           </div>
 
-                          {/* Item 2: BO 8.2 */}
+                          {/* Item 2: BO 8.2 (Changed if In-House) */}
                           <div onClick={() => setUrgentChecks(prev => ({...prev, bo82: !prev.bo82}))} className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.bo82 ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
                               <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.bo82 ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
                                   {urgentChecks.bo82 && <Check size={10} className="text-white" strokeWidth={4} />}
                               </div>
-                              <span className={`text-xs ${urgentChecks.bo82 ? 'text-red-900 font-medium' : 'text-gray-600'}`}>Create <b>BO 8.2</b> (Do NOT Sync 8.7)</span>
+                              {/* --- IN-HOUSE LOGIC: Change Instruction --- */}
+                              <span className={`text-xs ${urgentChecks.bo82 ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
+                                  {formData.isInHouse ? <>Notify <b>Internal Maintenance Group</b> (No BO8.2)</> : <>Create <b>BO 8.2</b> (Do NOT Sync 8.7)</>}
+                              </span>
                           </div>
 
                           {/* Item 3: Redmine */}
@@ -433,11 +559,11 @@ const EntryModal = ({
                       </div>
                   </div>
               ) : (
-                  // --- SCHEDULED / CANCELLED LAYOUT (Original) ---
+                  // --- SCHEDULED / CANCELLED / PART OF GAME LAYOUT ---
                   <div className="flex flex-col gap-4 h-full">
                     <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Generated Script</span>
-                        <span className="text-[10px] font-mono text-gray-400">READ-ONLY</span>
+                        {formData.isInHouse ? <span className="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded">INTERNAL ONLY</span> : <span className="text-[10px] font-mono text-gray-400">READ-ONLY</span>}
                     </div>
                     
                     <div className="group relative">
@@ -450,12 +576,13 @@ const EntryModal = ({
                         </div>
                     </div>
                     
-                    <div className="group relative flex-1">
+                    {/* FIXED: BODY SCRIPT CONTAINER */}
+                    <div className="group relative flex-1 min-h-0 flex flex-col">
                         <div className="flex justify-between items-end mb-1">
                             <label className="text-[10px] font-semibold text-gray-400">BODY</label>
                             <CopyButton text={generateScheduledScript('body')} />
                         </div>
-                        <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap h-full">
+                        <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap flex-1 overflow-y-auto">
                             {generateScheduledScript('body')}
                         </div>
                     </div>

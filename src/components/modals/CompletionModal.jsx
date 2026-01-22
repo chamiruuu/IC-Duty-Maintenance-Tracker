@@ -34,8 +34,11 @@ const CompletionModal = ({
   const isNotice = item.is_until_further_notice;
   const showRobotNotify = isUrgent || isNotice;
   
-  // --- NEW: DETECT EXTENDED MAINTENANCE ---
+  // --- DETECT EXTENDED MAINTENANCE ---
   const isExtended = item.type === 'Extended Maintenance' || item.is_until_further_notice;
+
+  // --- NEW: DETECT SINGLE GAME MAINTENANCE ---
+  const isSingleGame = item.type === 'Single Game Maintenance';
 
   // --- FIXED EARLY DETECTION LOGIC ---
   const scheduledEnd = item.end_time 
@@ -55,15 +58,30 @@ const CompletionModal = ({
       return minutes > 0 ? `${hours} hrs ${minutes} mins` : `${hours} hrs`;
   };
 
-  // --- 1. SCRIPT GENERATION ---
   // --- 1. SCRIPT GENERATION (UPDATED) ---
   const getFinishContent = () => {
-    // If it's an Extended Maintenance (Estimated Time OR Until Further Notice)
+    // 1. Single/Multiple Game Logic (Highest Priority)
+    if (isSingleGame) {
+        const games = (item.affected_games || '').split('\n').filter(g => g.trim());
+        const isMultiple = games.length > 1;
+        
+        // If Multiple: "Provider-part of the game"
+        // If Single: "Provider-GameName" (Take the first line of affected_games)
+        const gameName = games[0] ? games[0].trim() : "Game";
+        const subjectSuffix = isMultiple ? "part of the game" : gameName;
+        const subject = `${item.provider}-${subjectSuffix}`;
+        
+        const typeText = isUrgent ? 'urgent maintenance' : 'scheduled maintenance';
+
+        return `Hello there,\n\nPlease be informed that 【${subject}】 ${typeText} has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
+    }
+
+    // 2. Extended Maintenance Logic
     if (isExtended) {
         return `Hello there\nPlease be informed that 【${item.provider}】 extend maintenance has been completed.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     }
 
-    // Standard Logic for Scheduled / Urgent
+    // 3. Standard Scheduled / Urgent Logic
     const typeText = isUrgent ? 'urgent maintenance' : 'scheduled maintenance';
     return `Hello there, \nPlease be informed that 【${item.provider}】 ${typeText} has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
   };
@@ -124,14 +142,26 @@ const CompletionModal = ({
   // --- VALIDATION LOGIC ---
   let canConfirm = false;
   if (isEarly) {
-      canConfirm = sopChecks.manualOpen && sopChecks.functionalCheck && sopChecks.announcements;
+      if (isSingleGame) {
+          // Early Single Game: No manual open needed
+          canConfirm = sopChecks.functionalCheck && sopChecks.announcements;
+      } else {
+          canConfirm = sopChecks.manualOpen && sopChecks.functionalCheck && sopChecks.announcements;
+      }
   } else {
       // Normal Completion Validation
-      // If it is Extended, we mandate the manualOpen check as well.
-      canConfirm = sopChecks.gameTest && 
-                   sopChecks.documentation && 
-                   (!showRobotNotify || sopChecks.robotNotify) &&
-                   (!isExtended || sopChecks.manualOpen); // <--- NEW: Require manual open check if Extended
+      if (isSingleGame) {
+          // Single Game: No Manual Open required (as it wasn't closed)
+          canConfirm = sopChecks.gameTest && 
+                       sopChecks.documentation && 
+                       (!showRobotNotify || sopChecks.robotNotify);
+      } else {
+          // Standard Logic
+          canConfirm = sopChecks.gameTest && 
+                       sopChecks.documentation && 
+                       (!showRobotNotify || sopChecks.robotNotify) &&
+                       (!isExtended || sopChecks.manualOpen);
+      }
   }
 
   return (
@@ -189,7 +219,8 @@ const CompletionModal = ({
                  
                  {isEarly ? (
                      <>
-                        {renderCheckItem(
+                        {/* Hide Manual Open if Single Game */}
+                        {!isSingleGame && renderCheckItem(
                             'manualOpen', 
                             'Manual Game Open (Note 1)', 
                             'Contacted personnel & manually opened game.', 
@@ -211,8 +242,8 @@ const CompletionModal = ({
                      </>
                  ) : (
                      <>
-                        {/* --- NEW: Add Manual Open for Extended Maintenance --- */}
-                        {isExtended && renderCheckItem(
+                        {/* Standard Manual Open: Only if NOT Single Game and IS Extended */}
+                        {!isSingleGame && isExtended && renderCheckItem(
                             'manualOpen', 
                             'Manual Game Open (Note 1)', 
                             'Maintenance was extended. Manually open game & confirm.', 
@@ -223,7 +254,9 @@ const CompletionModal = ({
                         {renderCheckItem(
                             'gameTest', 
                             'Game & Transfer Test', 
-                            'Manual open successful. Game loading and transfers are normal on WEB.', 
+                            isSingleGame 
+                                ? 'Game was not closed. Confirmed transfers are working normally.' 
+                                : 'Manual open successful. Game loading and transfers are normal on WEB.', 
                             <Activity size={16} />
                         )}
 

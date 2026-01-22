@@ -108,13 +108,16 @@ const Dashboard = ({ session }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [newUserCredentials, setNewUserCredentials] = useState(null);
 
+  // --- UPDATED: Initial Form State to include new fields ---
   const [formData, setFormData] = useState({
     provider: '',
     type: 'Scheduled',
     isUntilFurtherNotice: false,
     redmineLink: '',
     startTime: null,
-    endTime: null
+    endTime: null,
+    affectedGames: '', // New field for Part of the Game
+    isInHouse: false   // New field for Restricted/In-House
   });
 
   // --- INITIAL DATA & TIME SYNC (HARDENED FOR BACKGROUND USE) ---
@@ -609,7 +612,17 @@ const Dashboard = ({ session }) => {
     setEditingId(null); setErrors({});
     let startTime = dayjs().tz("Asia/Shanghai");
     if (prefillDate) startTime = dayjs(prefillDate).tz("Asia/Shanghai").hour(10).minute(0).second(0);
-    setFormData({ provider: typeof prefillProvider === 'string' ? prefillProvider : '', type: 'Scheduled', isUntilFurtherNotice: false, redmineLink: '', startTime: startTime, endTime: startTime.add(2, 'hour') });
+    // --- UPDATED: Reset new fields ---
+    setFormData({ 
+        provider: typeof prefillProvider === 'string' ? prefillProvider : '', 
+        type: 'Scheduled', 
+        isUntilFurtherNotice: false, 
+        redmineLink: '', 
+        startTime: startTime, 
+        endTime: startTime.add(2, 'hour'),
+        affectedGames: '',
+        isInHouse: false
+    });
     setIsModalOpen(true); setIsScheduleModalOpen(false);
   };
 
@@ -624,7 +637,17 @@ const Dashboard = ({ session }) => {
         formEndTime = dayjs(endStr);
     }
     const itemType = item.status === 'Cancelled' ? 'Cancelled' : item.type;
-    setFormData({ provider: item.provider, type: itemType, isUntilFurtherNotice: item.is_until_further_notice, redmineLink: fullLink, startTime: formStartTime, endTime: formEndTime });
+    // --- UPDATED: Populate new fields from item ---
+    setFormData({ 
+        provider: item.provider, 
+        type: itemType, 
+        isUntilFurtherNotice: item.is_until_further_notice, 
+        redmineLink: fullLink, 
+        startTime: formStartTime, 
+        endTime: formEndTime,
+        affectedGames: item.affected_games || '',
+        isInHouse: item.is_in_house || false
+    });
     setIsModalOpen(true);
   };
 
@@ -638,7 +661,10 @@ const Dashboard = ({ session }) => {
       provider: formData.provider, type: finalType, start_time: zonedStartTime.toISOString(),
       end_time: (formData.isUntilFurtherNotice || formData.type === 'Cancelled' || !zonedEndTime) ? null : zonedEndTime.toISOString(),
       is_until_further_notice: formData.isUntilFurtherNotice, redmine_ticket: digitsOnly, 
-      recorder: userProfile.work_name || session.user.email, cancellation_pending: isPendingCancel
+      recorder: userProfile.work_name || session.user.email, cancellation_pending: isPendingCancel,
+      // --- UPDATED: Send new fields to DB ---
+      affected_games: formData.affectedGames,
+      is_in_house: formData.isInHouse
     };
 
     let error;
@@ -648,9 +674,6 @@ const Dashboard = ({ session }) => {
     setLoading(false);
     if (!error) { 
       setIsModalOpen(false); setEditingId(null); setErrors({}); fetchMaintenances();
-      
-      // --- NEW: Generate Start Script for Urgent ---
-      // Just a simple success message. No button.
       triggerNotification('Success', `Maintenance entry ${editingId ? 'updated' : 'created'} successfully.`, 'success');
     } else triggerNotification('Error', error.message, 'error');
   };
@@ -674,6 +697,9 @@ const Dashboard = ({ session }) => {
       if (item.type === 'Extended Maintenance') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">EXTENDED</span>;
       if (item.type === 'Urgent') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">URGENT</span>;
       if (item.type === 'Cancelled' || item.status === 'Cancelled') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-500 border border-gray-300 line-through">CANCELLED</span>;
+      // --- UPDATED: New Badge for Part of the Game ---
+      if (item.type === 'Part of the Game') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">PART OF GAME</span>;
+      
       if (item.status === 'Completed' && item.completion_time && item.end_time) {
           const actual = parseISO(item.completion_time); const planned = parseISO(item.end_time);
           if (differenceInMinutes(planned, actual) > 5) {

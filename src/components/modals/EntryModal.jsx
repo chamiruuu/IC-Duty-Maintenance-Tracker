@@ -306,10 +306,12 @@ const EntryModal = ({
   
   const inputStyle = (isError) => `w-full bg-white border text-gray-900 text-sm rounded-sm px-3 py-2 outline-none transition-all ${isError ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-black'}`;
 
+  // Helper for Provider specific hints
   const getProviderHint = () => {
-      if(formData.provider === 'Pragmatic Play') return { text: 'For Reel Kingdom games, list them text-only.', link: 'https://snipboard.io/h6JWba.jpg' };
-      if(formData.provider === 'PT Slots') return { text: 'For GPAS games, list them text-only.', link: 'https://snipboard.io/uDgQrB.jpg' };
-      return null;
+      if(formData.provider === 'Pragmatic Play') return { text: 'For Reel Kingdom games, Please Upload Images.', link: 'https://snipboard.io/h6JWba.jpg' };
+      if(formData.provider === 'PT Slots') return { text: 'For PT-GPAS games, Please Upload Images.', link: 'https://snipboard.io/uDgQrB.jpg' };
+      // Default for all other providers
+      return { text: 'Please use text format only.', link: null };
   };
   const providerHint = getProviderHint();
 
@@ -423,7 +425,7 @@ const EntryModal = ({
                     </div>
                     <textarea 
                         className={`${inputStyle(errors.affectedGames)} h-24 font-mono text-xs`} 
-                        placeholder="E.g.\nSweet Bonanza\nGate of Olympus"
+                        placeholder="E.g.Sweet Bonanza"
                         value={formData.affectedGames || ''}
                         onChange={(e) => { setFormData({...formData, affectedGames: e.target.value}); setErrors({...errors, affectedGames: false}); }}
                     />

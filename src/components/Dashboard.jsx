@@ -261,14 +261,19 @@ const Dashboard = ({ session }) => {
               if (m.status === 'Completed' && !m.bo_deleted && m.completion_time) {
                   const completeDate = parseISO(m.completion_time);
                   const twoHoursLater = addHours(completeDate, 2);
+                  
+                  // Difference: (Now - Target). 
+                  // If positive, Now is PAST the target.
                   const diff = differenceInMinutes(now, twoHoursLater);
                   
                   const reminderId = `${m.id}-2hr-reminder`;
-                  if (Math.abs(diff) <= 5 && !alertedRef.current.has(reminderId)) {
+
+                  // UPDATED: Check (diff >= 0) to ensure we are AFTER the 2-hour mark
+                  if (diff >= 0 && diff <= 5 && !alertedRef.current.has(reminderId)) {
                       triggerNotification(
                           `Action Required: BO 8.2 Cleanup`, 
-                          `2 hours post-completion for ${m.provider}. Please delete announcement & confirm in dashboard.`, 
-                          'warning'
+                          `2 hours have passed since completion for ${m.provider}. Please delete announcement & confirm.`, 
+                          'warning' // This type triggers browser notification
                       );
                       alertedRef.current.add(reminderId);
                   }
@@ -283,6 +288,11 @@ const Dashboard = ({ session }) => {
               const currentH = parseInt(format(nowZoned, 'H', { timeZone: SHANGHAI_TZ }));
               const currentM = parseInt(format(nowZoned, 'm', { timeZone: SHANGHAI_TZ }));
               const currentTimeValue = currentH + (currentM / 60);
+
+              // --- GET FIRST NAME ---
+              const rawName = userProfile.work_name || 'User';
+              const firstName = rawName.split(' ')[0].trim();
+              // ----------------------
 
               // Define Shift Start Times (UTC+8)
               // 07:00 (Morning), 14:45 (Afternoon), 22:45 (Night)
@@ -304,7 +314,8 @@ const Dashboard = ({ session }) => {
                           const alertId = `${m.id}-shift-check-${format(nowZoned, 'yyyy-MM-dd')}-${boundary}`;
                           
                           if (!alertedRef.current.has(alertId)) {
-                              const script = `Hi ${m.provider}, this is the new shift taking over. Asking for an update regarding the urgent maintenance. Is there an estimated time for completion? Thank you.`;
+                              // --- UPDATED SCRIPT HERE ---
+                              const script = `Hi Team this is ${firstName}, Asking for an update regarding the ${m.provider} maintenance. Is there an estimated time for completion? Thank you.`;
                               
                               triggerNotification(
                                   `Shift Handover Check: ${m.provider}`, 
@@ -327,17 +338,24 @@ const Dashboard = ({ session }) => {
           const minutesLeft = differenceInMinutes(endDate, now); 
           const minutesPast = differenceInMinutes(now, endDate); 
 
+          // --- UPDATE START: Get First Name Only ---
+          const rawName = userProfile.work_name || 'User';
+          const firstName = rawName.split(' ')[0].trim(); 
+          // -----------------------------------------
+
           const alertId30 = `${m.id}-30min-warn`;
           if (minutesLeft <= 30 && minutesLeft > 25 && !alertedRef.current.has(alertId30)) {
                 const endStr = format(parseISO(m.end_time), 'HH:mm');
-                const script = `Hi Team, This is ${userProfile.work_name}. May we confirm if the maintenance end on time ${endStr}? Thank You.`;
+                // UPDATED: Uses ${firstName}
+                const script = `Hi Team, This is ${firstName}. May we confirm if the maintenance end on time ${endStr}? Thank You.`;
                 triggerNotification(`30-Min Check: ${m.provider}`, `Time to confirm status. Click to copy script.`, 'warning', script);
                 alertedRef.current.add(alertId30);
           }
 
           const alertIdGrace = `${m.id}-grace-period`;
           if (minutesPast > 0 && minutesPast <= 5 && !alertedRef.current.has(alertIdGrace)) {
-                  const script = `Hi Team, this is ${userProfile.work_name}. May we confirm if the scheduled maintenance is completed now ? Thank You.`;
+                  // UPDATED: Uses ${firstName}
+                  const script = `Hi Team, this is ${firstName}. May we confirm if the scheduled maintenance is completed now ? Thank You.`;
                   triggerNotification(`Scheduled Time Reached`, `Please confirm completion for 【${m.provider}】.`, 'warning', script);
                   alertedRef.current.add(alertIdGrace);
           }
@@ -370,9 +388,12 @@ const Dashboard = ({ session }) => {
     const id = Date.now();
     setNotifications(prev => [...prev, { id, title, message, type, copyText, maintenanceId }]);
     setNotificationHistory(prev => [{ id, title, message, type, timestamp: new Date(), copyText }, ...prev]);
+    
+    // BROWSER NOTIFICATION LOGIC
     if (type !== 'success' && "Notification" in window && Notification.permission === "granted") {
         new Notification(title, { body: message });
     }
+    
     setTimeout(() => removeNotification(id), 20000);
   };
   const removeNotification = (id) => setNotifications(prev => prev.filter(n => n.id !== id));

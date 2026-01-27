@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, Clock, Loader2, AlertTriangle, FileText, Send, Check, Lock } from 'lucide-react';
+import { X, CheckCircle2, Clock, Loader2, AlertTriangle, FileText, Send, Check, Lock, ExternalLink } from 'lucide-react';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import dayjs from 'dayjs';
@@ -10,20 +10,21 @@ import CopyButton from '../CopyButton';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
+
 const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading, initialMode = 'select' }) => {
   const [mode, setMode] = useState('select'); 
   const [extensionType, setExtensionType] = useState('time'); 
   const [newEndTime, setNewEndTime] = useState(null);
   
   // --- LATE EXTENSION LOGIC ---
-  // If current time is within 5 minutes of End Time (or passed it), it's a "Late Extension"
   const now = dayjs();
   const endTime = item ? dayjs(item.end_time) : dayjs();
   const minutesRemaining = endTime.diff(now, 'minute');
   const isLateExtension = minutesRemaining <= 5;
 
   const [checklist, setChecklist] = useState({
-    manualClose: false, // New check for Late Extensions
+    manualClose: false,
     boUpdate: false,
     notifyMerchant: false,
     internalNotify: false,
@@ -53,12 +54,12 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
 
   if (!isOpen || !item) return null;
 
-  // --- VALIDATION: Require 'manualClose' ONLY if it is a Late Extension ---
+  // --- VALIDATION ---
   const isSopComplete = 
-      (!isLateExtension || checklist.manualClose) && // Conditional Check
+      (!isLateExtension || checklist.manualClose) && 
       checklist.boUpdate && 
-      checklist.internalNotify && // Internal first (step 2)
-      checklist.notifyMerchant && // Merchant second (step 3)
+      checklist.internalNotify && 
+      checklist.notifyMerchant && 
       checklist.redmineUpdate;
 
   const getManualCloseMsg = () => {
@@ -67,11 +68,14 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
 
   const getInternalGroupMsg = () => `Maintenance time update for ${item.provider}, BO8.2 announcement has been updated.`;
   
-  // --- REMOVED getAnnouncementTitle FUNCTION HERE ---
-
   const getAnnouncementBody = () => {
     const timeStr = extensionType === 'notice' ? "until further notice" : `${newEndTime?.format('YYYY-MM-DD HH:mm')} (GMT+8)`;
     return `Hello there,\n\nPlease be informed that 【${item.provider}】 maintenance has been extended ${timeStr}.\nWe apologize for the inconvenience caused.\n\nThank you.`;
+  };
+
+  const getRedmineDisplayId = (ticketNum) => {
+    if (!ticketNum) return '-';
+    return `CS-${ticketNum.toString().replace(/\D/g, '')}`;
   };
 
   const handleConfirmExtension = () => {
@@ -108,7 +112,6 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
             <div className={`flex-1 transition-colors duration-300 ${isChecked ? 'text-gray-900' : 'text-gray-600'}`}>
                 <div className="flex items-center gap-2">
                     <span className="text-xs leading-relaxed font-medium block">{text}</span>
-                    {/* Render Copy Button if copyText is provided */}
                     {copyText && (
                         <div onClick={(e) => e.stopPropagation()} title="Copy Message">
                             <CopyButton text={copyText} size={14} className="text-gray-400 hover:text-black bg-white border border-gray-200 p-1 rounded-md shadow-sm" />
@@ -134,7 +137,29 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
           <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide flex items-center gap-2">
              <Clock size={16} className="text-red-500" /> Maintenance Resolution
           </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-black"><X size={18} /></button>
+          
+          <div className="flex items-center gap-4">
+             {/* Redmine Ticket Display */}
+             <div className="bg-white border border-gray-200 px-2 py-1 rounded text-[10px] font-mono font-bold text-gray-500 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
+                {item.redmine_ticket ? (
+                    <a 
+                      href={`${REDMINE_BASE_URL}${item.redmine_ticket}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 hover:text-indigo-600 hover:underline"
+                      title="Open Redmine Ticket"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {getRedmineDisplayId(item.redmine_ticket)}
+                      <ExternalLink size={10} />
+                    </a>
+                ) : (
+                    '-'
+                )}
+             </div>
+             
+             <button onClick={onClose} className="text-gray-400 hover:text-black"><X size={18} /></button>
+          </div>
         </div>
 
         <div className="p-6 overflow-y-auto">
@@ -203,26 +228,28 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                         )}
                     </div>
                     <hr className="border-gray-100" />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* --- MAIN CONTENT GRID --- */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                        
+                        {/* LEFT: CHECKLIST */}
                         <div className="space-y-3">
                             <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2"><FileText size={14} /> SOP Checklist <span className="text-red-500">*</span></h5>
                             <div className="space-y-2">
-                                {/* Late Extension Check - Removed copyText from here */}
                                 {isLateExtension && renderStep('manualClose', '!', <><strong>CRITICAL: Manual Game Close</strong><br/>Late extension. Manually close game to prevent auto-open.</>, <Lock size={16} />, true)}
-
-                                {/* Reordered Steps */}
                                 {renderStep('boUpdate', '1', <>Update <strong>BO8.2</strong> Announcement.<br/>{extensionType === 'notice' ? 'Check "Until Further Notice".' : 'Update the "End Time".'}</>)}
                                 {renderStep('internalNotify', '2', <>Notify <strong>IP Internal Group</strong>.<br/>(Use copy text on right)</>)}
                                 {renderStep('notifyMerchant', '3', <>Notify Merchant via Robot's BO Select:<br/><strong>【IC-Maintenance&Promo of providers】</strong></>)}
                                 {renderStep('redmineUpdate', '4', <>Update <strong>Redmine & Sync BO8.7</strong>.</>)}
                             </div>
                         </div>
-                        <div className="space-y-3">
+
+                        {/* RIGHT: MESSAGES (Updated Layout) */}
+                        <div className="space-y-3 flex flex-col h-full">
                             <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2"><Send size={14} /> Messages to Copy</h5>
                             
-                            {/* --- MOVED: MANUAL CLOSE MSG (Only shows if Late Extension) --- */}
                             {isLateExtension && (
-                                <div className="space-y-1">
+                                <div className="space-y-1 shrink-0">
                                     <label className="text-[10px] font-bold text-red-500 animate-pulse">MANUAL CLOSE MSG (CRITICAL)</label>
                                     <div className="flex gap-2">
                                         <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">{getManualCloseMsg()}</div>
@@ -231,8 +258,7 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                                 </div>
                             )}
 
-                            {/* 1. INTERNAL GROUP MESSAGE */}
-                            <div className="space-y-1">
+                            <div className="space-y-1 shrink-0">
                                 <label className="text-[10px] font-bold text-gray-400">FOR INTERNAL GROUP</label>
                                 <div className="flex gap-2">
                                     <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">{getInternalGroupMsg()}</div>
@@ -240,16 +266,17 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                                 </div>
                             </div>
 
-                            {/* 2. ANNOUNCEMENT BODY */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-400">ANNOUNCEMENT BODY</label>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 h-16 overflow-y-auto whitespace-pre-wrap">{getAnnouncementBody()}</div>
+                            {/* Expanded Announcement Section */}
+                            <div className="space-y-1 flex-1 flex flex-col min-h-0">
+                                <label className="text-[10px] font-bold text-gray-400 shrink-0">ANNOUNCEMENT BODY</label>
+                                <div className="flex gap-2 flex-1 min-h-0">
+                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 overflow-y-auto min-h-[80px] h-full whitespace-pre-wrap">{getAnnouncementBody()}</div>
                                     <CopyButton text={getAnnouncementBody()} />
                                 </div>
                             </div>
                         </div>
                     </div>
+
                     <div className="flex gap-3 pt-2 border-t border-gray-100">
                         <button 
                             onClick={() => initialMode === 'extend' ? onClose() : setMode('select')} 

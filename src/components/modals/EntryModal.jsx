@@ -11,21 +11,9 @@ import { generateUrgentScript } from '../../lib/scriptGenerator';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-const PROVIDERS = [
-  "C-Sports", "I-Sports", "OPUS Sport", "SBO", "BTi", "IMSB", "WBet",
-  "PA Casino", "ALLBET", "BG Casino", "DG Casino", "GP Casino", "Opus Casino",
-  "OG Plus", "GClub Live", "Sexy Casino", "Evolution Gaming", "SA Gaming",
-  "WM", "PP Casino", "Yeebet", "PT Casino", "MG Live", "Spadegaming",
-  "CQ9 Slots", "HBS", "MG+ Slot", "PG Soft", "Pragmatic Play", "PP Streaming",
-  "PT Slots", "YGG", "Joker", "Playstar", "BNG", "AWC", "DC", "SKYWIND",
-  "NETENT", "FastSpin", "JILI", "CG", "Next Spin", "RSG", "NoLimit City",
-  "OG Slots", "Relax gaming", "Hacksaw", "YGR", "AdvantPlay", "Octoplay",
-  "FatPanda", "2J", "GGSoft", "SABA Number Game", "QQKENO", "QQThai",
-  "QQViet", "QQ4D", "PokerQ"
-];
-
 const EntryModal = ({ 
-  isOpen, onClose, formData, setFormData, handleConfirm, loading, editingId, errors, setErrors, existingMaintenances 
+  isOpen, onClose, formData, setFormData, handleConfirm, loading, editingId, errors, setErrors, existingMaintenances,
+  providersDB = [] // --- NEW PROP: List from Database ---
 }) => {
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -39,7 +27,12 @@ const EntryModal = ({
   const [rescheduleChecklist, setRescheduleChecklist] = useState({ internal: false, boSync: false });
   
   // Urgent SOP Checklist State
-  const [urgentChecks, setUrgentChecks] = useState({ internal: false, bo82: false, redmine: false });
+  const [urgentChecks, setUrgentChecks] = useState({ 
+      contact: false, 
+      bo82: false, 
+      merchant: false, 
+      redmine: false 
+  });
 
   const [urgentScript, setUrgentScript] = useState({ title: '', startMessage: '' });
   const [initialTimes, setInitialTimes] = useState({ start: null, end: null });
@@ -97,7 +90,12 @@ const EntryModal = ({
   const isCancelled = currentTypeStr === 'Cancelled';
   
   // Logic to lock the Confirm button if Urgent checks aren't met
-  const isUrgentLocked = isUrgent && (!urgentChecks.internal || !urgentChecks.bo82 || !urgentChecks.redmine);
+  const isUrgentLocked = isUrgent && (
+      !urgentChecks.contact || 
+      !urgentChecks.bo82 || 
+      !urgentChecks.merchant || 
+      !urgentChecks.redmine
+  );
 
   // Update Urgent Script whenever form data changes
   useEffect(() => {
@@ -165,20 +163,25 @@ const EntryModal = ({
 
   if (!isOpen) return null;
 
-  const filteredProviders = PROVIDERS.filter(p => p.toLowerCase().includes(searchTerm.toLowerCase()));
+  // --- UPDATED: Use providersDB for filtering ---
+  // 1. Filter using providersDB instead of PROVIDERS array
+  const filteredProviders = providersDB.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  const handleProviderSelect = (provider) => {
-      setFormData({ ...formData, provider: provider });
-      setSearchTerm(provider);
+  // 2. Update Selection to Auto-Detect In-House Status
+  const handleProviderSelect = (providerObj) => {
+      setFormData({ 
+          ...formData, 
+          provider: providerObj.name, 
+          isInHouse: providerObj.is_in_house // <--- Auto-set from DB
+      });
+      setSearchTerm(providerObj.name);
       setIsDropdownOpen(false);
       setErrors({ ...errors, provider: false, providerDuplicate: false, providerInvalid: false });
   };
 
-  // --- HANDLER: Type Change (Dropdown) ---
   const handleTypeChange = (e) => {
       const newBase = e.target.value; 
       let newTypeStr = newBase;
-      
       if (newBase === 'Cancelled') {
           setErrors({});
       } else {
@@ -189,19 +192,17 @@ const EntryModal = ({
       setFormData({ ...formData, type: newTypeStr });
   };
 
-  // --- HANDLER: Part of Game Toggle ---
+  // 3. Update PartGame toggle (Do NOT reset isInHouse manually anymore)
   const handlePartGameChange = (e) => {
       const checked = e.target.checked;
       setIsPartGame(checked);
-      
       const baseUrgent = formData.type.includes('Urgent');
-      
       if (checked) {
           const newStr = baseUrgent ? 'Part of the Game (Urgent)' : 'Part of the Game';
           setFormData({ ...formData, type: newStr });
       } else {
           const newStr = baseUrgent ? 'Urgent' : 'Scheduled';
-          setFormData({ ...formData, type: newStr, isInHouse: false, affectedGames: '' });
+          setFormData({ ...formData, type: newStr, affectedGames: '' }); // <--- Removed isInHouse: false
       }
   };
 
@@ -215,11 +216,30 @@ const EntryModal = ({
     let hasError = false;
 
     if (!formData.provider) { newErrors.provider = true; hasError = true; } 
-    else if (!PROVIDERS.includes(formData.provider)) { newErrors.providerInvalid = true; hasError = true; }
     
     if (!isCancelled && !formData.redmineLink) { newErrors.redmineLink = true; hasError = true; }
     if (!formData.startTime) { newErrors.startTime = true; hasError = true; }
-    if (!formData.isUntilFurtherNotice && !isCancelled && !formData.endTime) { newErrors.endTime = true; hasError = true; }
+    
+    // --- UPDATED END TIME VALIDATION ---
+    if (!formData.isUntilFurtherNotice && !isCancelled) {
+        if (!formData.endTime) { 
+            newErrors.endTime = true; 
+            hasError = true; 
+        } else if (formData.startTime) {
+            // Check if End Time is Before Start Time
+            if (formData.endTime.isBefore(formData.startTime)) {
+                newErrors.endTime = true;
+                newErrors.timeInvalid = "End Time cannot be before Start Time";
+                hasError = true;
+            }
+            // Check if End Time is Same as Start Time
+            else if (formData.endTime.isSame(formData.startTime)) {
+                newErrors.endTime = true;
+                newErrors.timeInvalid = "Start and End Time cannot be the same";
+                hasError = true;
+            }
+        }
+    }
 
     if (isPartGame && !formData.affectedGames?.trim()) {
         newErrors.affectedGames = true; hasError = true;
@@ -270,6 +290,7 @@ const EntryModal = ({
 
   const getPreviewId = (url) => { if (!url) return ''; const digits = url.replace(/\D/g, ''); return digits ? `CS-${digits}` : ''; };
 
+  // Generator for Scheduled & Cancelled items
   const generateScheduledScript = (part) => {
     const { provider, startTime, endTime, isUntilFurtherNotice, type } = formData;
     if (!provider || !startTime) return ""; 
@@ -279,12 +300,14 @@ const EntryModal = ({
         return startTime.format('YYYY/MM/DD'); 
     }
 
+    // --- PART OF THE GAME (SCHEDULED) ---
     if (isPartGame) {
-        const scriptData = generatePartGameScript(false); 
+        const scriptData = generatePartGameScript(false); // false = not urgent
         if (part === 'title') return scriptData.title;
         return scriptData.body;
     }
 
+    // --- STANDARD SCHEDULED ---
     const dStart = startTime.format('YYYY-MM-DD');
     const tStart = startTime.format('HH:mm');
     const tEnd = endTime ? endTime.format('HH:mm') : '';
@@ -306,11 +329,10 @@ const EntryModal = ({
   
   const inputStyle = (isError) => `w-full bg-white border text-gray-900 text-sm rounded-sm px-3 py-2 outline-none transition-all ${isError ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-black'}`;
 
-  // Helper for Provider specific hints
+  // --- HARDCODED HINTS (As requested) ---
   const getProviderHint = () => {
       if(formData.provider === 'Pragmatic Play') return { text: 'For Reel Kingdom games, Please Upload Images.', link: 'https://snipboard.io/h6JWba.jpg' };
       if(formData.provider === 'PT Slots') return { text: 'For PT-GPAS games, Please Upload Images.', link: 'https://snipboard.io/uDgQrB.jpg' };
-      // Default for all other providers
       return { text: 'Please use text format only.', link: null };
   };
   const providerHint = getProviderHint();
@@ -358,7 +380,13 @@ const EntryModal = ({
                   <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-48 overflow-y-auto">
                       {filteredProviders.length > 0 ? (
                           filteredProviders.map((p) => (
-                              <li key={p} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer font-medium" onClick={() => handleProviderSelect(p)}>{p}</li>
+                              <li key={p.id} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer font-medium" onClick={() => handleProviderSelect(p)}>
+                                  {/* RENDER NAME & BADGE */}
+                                  <div className="flex items-center justify-between">
+                                      <span>{p.name}</span>
+                                      {p.is_in_house && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded uppercase font-bold">In-House</span>}
+                                  </div>
+                              </li>
                           ))
                       ) : (
                           <li className="px-3 py-2 text-sm text-gray-400 italic">No matches found</li>
@@ -397,7 +425,7 @@ const EntryModal = ({
                         <option value="Cancelled">Cancelled</option>
                    </select>
                </div>
-               <div className="flex flex-col gap-2 pb-1">
+               <div className="flex flex-col gap-2 mt-6 pl-1">
                    <label className={`flex items-center gap-2 cursor-pointer ${isCancelled ? 'opacity-50 cursor-not-allowed' : ''}`}>
                        <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-black focus:ring-black" checked={formData.isUntilFurtherNotice} disabled={isCancelled} onChange={(e) => { setFormData({...formData, isUntilFurtherNotice: e.target.checked}); if(e.target.checked) setErrors({...errors, endTime: false}); }} />
                        <span className="text-xs font-medium text-gray-700">Until Further Notice</span>
@@ -408,24 +436,33 @@ const EntryModal = ({
                        <span className="text-xs font-bold text-purple-700">Part of the Game</span>
                    </label>
 
-                   {isPartGame && (
-                       <label className="flex items-center gap-2 cursor-pointer animate-in fade-in slide-in-from-left-2">
-                           <input type="checkbox" className="w-3.5 h-3.5 rounded-sm border-gray-300 text-gray-600 focus:ring-gray-600" checked={formData.isInHouse || false} onChange={(e) => setFormData({...formData, isInHouse: e.target.checked})} />
-                           <span className="text-xs font-medium text-gray-500">Restricted / In-House</span>
-                       </label>
-                   )}
+                   {/* --- REMOVED: Restricted / In-House Checkbox (Now Auto-Detected) --- */}
                </div>
             </div>
 
+            {/* Affected Games Input (Visible only if 'Part of the Game') */}
             {isPartGame && (
                 <div className="animate-in fade-in slide-in-from-top-2">
                     <div className="flex justify-between mb-1.5">
                         <label className="block text-xs font-semibold text-gray-500">Affected Games (One per line) *</label>
-                        {providerHint && <a href={providerHint.link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 flex items-center gap-1 hover:underline"><Info size={10}/> {providerHint.text}</a>}
+                        
+                        {/* UPDATED HINT LOGIC FROM DB */}
+                        {providerHint && (
+                            providerHint.link ? (
+                                <a href={providerHint.link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 flex items-center gap-1 hover:underline">
+                                    <Info size={10}/> {providerHint.text}
+                                </a>
+                            ) : (
+                                <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                                    <Info size={10}/> {providerHint.text}
+                                </span>
+                            )
+                        )}
                     </div>
+                    
                     <textarea 
                         className={`${inputStyle(errors.affectedGames)} h-24 font-mono text-xs`} 
-                        placeholder="E.g.Sweet Bonanza"
+                        placeholder="E.g.\nSweet Bonanza\nGate of Olympus"
                         value={formData.affectedGames || ''}
                         onChange={(e) => { setFormData({...formData, affectedGames: e.target.value}); setErrors({...errors, affectedGames: false}); }}
                     />
@@ -441,11 +478,39 @@ const EntryModal = ({
                 <>
                     <div>
                         <label className="block text-xs font-semibold mb-1.5 text-gray-500">Start Time (UTC+8) *</label>
-                        <DateTimePicker value={formData.startTime} onChange={(newValue) => { setFormData(prev => ({ ...prev, startTime: newValue })); setErrors({...errors, startTime: false, providerDuplicate: false}); }} timeSteps={{ minutes: 1 }} ampm={false} slotProps={{ textField: { size: 'small', fullWidth: true, className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime } }} />
+                        <DateTimePicker 
+                            value={formData.startTime} 
+                            onChange={(newValue) => { 
+                                setFormData(prev => ({ ...prev, startTime: newValue })); 
+                                // UPDATED: Clear 'timeInvalid' error when start time changes
+                                setErrors({...errors, startTime: false, providerDuplicate: false, timeInvalid: false}); 
+                            }} 
+                            timeSteps={{ minutes: 1 }} 
+                            ampm={false} 
+                            slotProps={{ textField: { size: 'small', fullWidth: true, className: errors.startTime ? 'bg-red-50' : '', error: !!errors.startTime } }} 
+                        />
                     </div>
                     <div className={formData.isUntilFurtherNotice ? 'opacity-50 pointer-events-none' : ''}>
                         <label className="block text-xs font-semibold mb-1.5 text-gray-500">End Time (UTC+8) *</label>
-                        <DateTimePicker value={formData.endTime} onChange={(newValue) => { setFormData(prev => ({ ...prev, endTime: newValue })); setErrors({...errors, endTime: false}); }} disabled={formData.isUntilFurtherNotice} timeSteps={{ minutes: 1 }} ampm={false} slotProps={{ textField: { size: 'small', fullWidth: true, className: errors.endTime ? 'bg-red-50' : '', error: !!errors.endTime } }} />
+                        <DateTimePicker 
+                            value={formData.endTime} 
+                            onChange={(newValue) => { 
+                                setFormData(prev => ({ ...prev, endTime: newValue })); 
+                                // UPDATED: Clear 'timeInvalid' error when end time changes
+                                setErrors({...errors, endTime: false, timeInvalid: false}); 
+                            }} 
+                            disabled={formData.isUntilFurtherNotice} 
+                            timeSteps={{ minutes: 1 }} 
+                            ampm={false} 
+                            slotProps={{ textField: { size: 'small', fullWidth: true, className: errors.endTime ? 'bg-red-50' : '', error: !!errors.endTime } }} 
+                        />
+                        
+                        {/* UPDATED: Display specific time error if it exists */}
+                        {errors.timeInvalid && (
+                            <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-1 animate-in fade-in slide-in-from-top-1">
+                                <AlertCircle size={10}/> {errors.timeInvalid}
+                            </span>
+                        )}
                     </div>
                 </>
             )}
@@ -492,49 +557,87 @@ const EntryModal = ({
                       </div>
 
                       {/* --- CHECKLIST --- */}
+                      {/* --- REPLACE THE WHOLE CHECKLIST SECTION WITH THIS --- */}
                       <div className="bg-white border border-red-100 rounded-lg p-3 shadow-sm space-y-2">
                           <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-1">Required SOP Actions</h4>
                           
-                          {/* Item 1: Notify Internal */}
-                          <div onClick={() => setUrgentChecks(prev => ({...prev, internal: !prev.internal}))} className={`flex flex-col gap-2 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.internal ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
+                          {/* Item 1: Contact Carmen/Support (Updated with Note 1 Logic) */}
+                          <div onClick={() => setUrgentChecks(prev => ({...prev, contact: !prev.contact}))} className={`flex flex-col gap-2 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.contact ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
                               <div className="flex items-center gap-3">
-                                  <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.internal ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
-                                      {urgentChecks.internal && <Check size={10} className="text-white" strokeWidth={4} />}
+                                  <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.contact ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
+                                      {urgentChecks.contact && <Check size={10} className="text-white" strokeWidth={4} />}
                                   </div>
-                                  
-                                  {/* --- UPDATE THIS SPAN --- */}
-                                  <span className={`text-xs ${urgentChecks.internal ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
-                                      {isPartGame ? "Notify Leader (Lobby Remains Open)" : "Notify Leader & Request Open/Close"}
+                                  <span className={`text-xs ${urgentChecks.contact ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
+                                      1. Contact Personnel to Open/Close Game
                                   </span>
-                                  {/* ------------------------ */}
-
                               </div>
-                              <div className="pl-7 mt-1" onClick={(e) => e.stopPropagation()}>
-                                <label className="text-[9px] font-bold text-gray-400 uppercase">Message to Group</label>
-                                <div className="flex gap-2 mt-1">
-                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">{getUrgentInternalMsg()}</div>
-                                    <CopyButton text={getUrgentInternalMsg()} label="COPY" />
-                                </div>
+                              
+                              {/* ... inside Item 1 ... */}
+                              
+                              <div className="pl-7 space-y-1.5">
+                                  {isPartGame ? (
+                                      <span className="text-[10px] text-gray-500 block">Lobby remains open. Just notify leader.</span>
+                                  ) : (
+                                      <>
+                                          <div className="text-[10px] text-gray-500 flex flex-col gap-1 bg-gray-50 p-2 rounded border border-gray-100">
+                                              <div className="flex gap-1">
+                                                  <span className="font-bold text-gray-700 whitespace-nowrap">Mon-Fri 10AM-7PM:</span> 
+                                                  <span>Carmen (IP Internal) / Support</span>
+                                              </div>
+                                              <div className="flex gap-1">
+                                                  <span className="font-bold text-gray-700 whitespace-nowrap">Outside of above:</span> 
+                                                  <span>Open/Close Teams Group</span>
+                                              </div>
+                                              <div className="flex gap-1">
+                                                  <span className="font-bold text-red-600 whitespace-nowrap">No Reply? (&gt;15m):</span> 
+                                                  <span>Live Chat on WEB for QQ288 Support</span>
+                                              </div>
+                                              <div className="flex gap-1">
+                                                  <span className="font-bold text-red-700 whitespace-nowrap">Still No Reply?</span> 
+                                                  <span className="font-bold text-red-700 underline">Call Carmen</span>
+                                              </div>
+                                          </div>
+                                          
+                                          {/* Message Copy Box */}
+                                          <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                                              <div className="flex gap-2">
+                                                  <div className="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">{getUrgentInternalMsg()}</div>
+                                                  <CopyButton text={getUrgentInternalMsg()} label="COPY" />
+                                              </div>
+                                          </div>
+                                      </>
+                                  )}
                               </div>
                           </div>
 
-                          {/* Item 2: BO 8.2 (Changed if In-House) */}
+                          {/* Item 2: BO 8.2 */}
                           <div onClick={() => setUrgentChecks(prev => ({...prev, bo82: !prev.bo82}))} className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.bo82 ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
                               <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.bo82 ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
                                   {urgentChecks.bo82 && <Check size={10} className="text-white" strokeWidth={4} />}
                               </div>
-                              {/* --- IN-HOUSE LOGIC: Change Instruction --- */}
                               <span className={`text-xs ${urgentChecks.bo82 ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
-                                  {formData.isInHouse ? <>Notify <b>Internal Maintenance Group</b> (No BO8.2)</> : <>Create <b>BO 8.2</b> (Do NOT Sync 8.7)</>}
+                                  {formData.isInHouse ? <>Notify <b>Internal Maint. Group</b> (No BO8.2)</> : <>2. Create <b>BO 8.2</b> (Do NOT Sync 8.7)</>}
                               </span>
                           </div>
 
-                          {/* Item 3: Redmine */}
+                          {/* Item 3: Notify Merchants (BOT) */}
+                          <div onClick={() => setUrgentChecks(prev => ({...prev, merchant: !prev.merchant}))} className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.merchant ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
+                              <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.merchant ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
+                                  {urgentChecks.merchant && <Check size={10} className="text-white" strokeWidth={4} />}
+                              </div>
+                              <span className={`text-xs ${urgentChecks.merchant ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
+                                  3. Notify Merchants using the <b>BOT</b>
+                              </span>
+                          </div>
+
+                          {/* Item 4: Redmine */}
                           <div onClick={() => setUrgentChecks(prev => ({...prev, redmine: !prev.redmine}))} className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.redmine ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
                               <div className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.redmine ? 'bg-red-600 border-red-600' : 'border-gray-300 bg-white'}`}>
                                   {urgentChecks.redmine && <Check size={10} className="text-white" strokeWidth={4} />}
                               </div>
-                              <span className={`text-xs ${urgentChecks.redmine ? 'text-red-900 font-medium' : 'text-gray-600'}`}>Create <b>Redmine</b> Ticket (Attach Screenshot)</span>
+                              <span className={`text-xs ${urgentChecks.redmine ? 'text-red-900 font-medium' : 'text-gray-600'}`}>
+                                  4. Create <b>Redmine Ticket</b> (Attach Screenshot)
+                              </span>
                           </div>
                       </div>
 
@@ -573,7 +676,7 @@ const EntryModal = ({
                             <label className="text-[10px] font-semibold text-gray-400">TITLE</label>
                             <CopyButton text={generateScheduledScript('title')} />
                         </div>
-                        <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 break-words h-12">
+                        <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 break-words min-h-[3rem] max-h-20 overflow-y-auto">
                             {generateScheduledScript('title')}
                         </div>
                     </div>

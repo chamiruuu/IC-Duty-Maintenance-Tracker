@@ -8,6 +8,7 @@ import { isSameDay, differenceInMinutes, parseISO, addHours, addMinutes, isFutur
 
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
@@ -21,7 +22,8 @@ import {
   Gamepad2, User, CheckSquare, History as HistoryIcon, LayoutList,
   ShieldCheck, Shield, Users, LogOut, Check, Bell, Zap,
   PlayCircle, AlertTriangle, Timer, CheckCircle2, Ban,
-  MessageSquarePlus, Eraser, Lock, Info, Activity, Calendar 
+  MessageSquarePlus, Eraser, Lock, Info, Activity, Calendar, Settings,
+  Filter, Search, X 
 } from 'lucide-react';
 
 import NotificationToast from './NotificationToast';
@@ -37,6 +39,7 @@ import DeleteRequestModal from './modals/DeleteRequestModal';
 import FeedbackModal from './modals/FeedbackModal'; 
 import ConfirmationModal from './modals/ConfirmationModal';
 import ScheduleModal from './modals/ScheduleModal'; 
+import ProviderManagerModal from './modals/ProviderManagerModal'; // NEW IMPORT
 import { getChecklistForDate } from '../lib/scheduleRules'; 
 import { generateUrgentScript } from '../lib/scriptGenerator'; 
 
@@ -60,6 +63,10 @@ const Dashboard = ({ session }) => {
   const [isRefreshing, setIsRefreshing] = useState(false); 
   const [userProfile, setUserProfile] = useState({ role: 'normal', work_name: '' });
   const isHighLevel = ['admin', 'leader'].includes(userProfile.role);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState(null); // null = All Dates
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const filterRef = useRef(null); // To close menu when clicking outside
 
   // --- PRESENCE STATE ---
   const [activeUsers, setActiveUsers] = useState([]);
@@ -68,6 +75,10 @@ const Dashboard = ({ session }) => {
   // --- SCHEDULE STATE ---
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [checklistAlerted, setChecklistAlerted] = useState(false);
+
+  // --- PROVIDER MANAGEMENT STATE (NEW) ---
+  const [providersList, setProvidersList] = useState([]); 
+  const [isProviderManagerOpen, setIsProviderManagerOpen] = useState(false);
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -188,6 +199,15 @@ const Dashboard = ({ session }) => {
       clearInterval(clockTimer);
     };
   }, []);
+
+  // --- FETCH PROVIDERS FROM DB (NEW) ---
+  useEffect(() => {
+    const fetchProviders = async () => {
+      const { data } = await supabase.from('providers').select('*').order('name', { ascending: true });
+      if (data) setProvidersList(data);
+    };
+    fetchProviders();
+  }, [isProviderManagerOpen]); // Refresh when manager closes
 
   // --- PRESENCE SYSTEM ---
   useEffect(() => {
@@ -375,6 +395,16 @@ const Dashboard = ({ session }) => {
     }, 5000); 
     return () => clearInterval(checkTimer);
   }, [maintenances, userProfile, checklistAlerted]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (filterRef.current && !filterRef.current.contains(event.target)) {
+        setIsFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleSnooze = async (maintenanceId, notificationId) => {
     removeNotification(notificationId);
@@ -683,14 +713,18 @@ const Dashboard = ({ session }) => {
       end_time: (formData.isUntilFurtherNotice || formData.type === 'Cancelled' || !zonedEndTime) ? null : zonedEndTime.toISOString(),
       is_until_further_notice: formData.isUntilFurtherNotice, redmine_ticket: digitsOnly, 
       recorder: userProfile.work_name || session.user.email, cancellation_pending: isPendingCancel,
-      // --- UPDATED: Send new fields to DB ---
       affected_games: formData.affectedGames,
-      is_in_house: formData.isInHouse
+      is_in_house: formData.isInHouse,
+      
+      // --- ADD THIS LINE ---
+      status: finalStatus 
+      // --------------------
     };
 
     let error;
     if (editingId) ({ error } = await supabase.from('maintenances').update(payload).eq('id', editingId));
-    else ({ error } = await supabase.from('maintenances').insert([{ ...payload, status: finalStatus }]));
+    // You can also simplify the insert line below since status is now in payload:
+    else ({ error } = await supabase.from('maintenances').insert([{ ...payload }]));
     
     setLoading(false);
     if (!error) { 
@@ -746,46 +780,107 @@ const Dashboard = ({ session }) => {
     return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"><span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>Ongoing</span>;
   };
 
+  // --- UPDATED SORTING LOGIC ---
   const getSortedMaintenances = (items) => {
+    const now = new Date();
+
     return [...items].sort((a, b) => {
-        const isAComplete = a.status === 'Completed'; 
-        const isBComplete = b.status === 'Completed';
+        // --- 1. HISTORY VIEW: Sort by Start Time (Newest First) ---
+        if (view === 'history') {
+            return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+        }
+
+        // --- 2. PENDING VIEW: Smart Priority Sort ---
         
-        // --- CHANGE HERE: Move Completed items to the TOP (-1) instead of bottom (1) ---
-        if (isAComplete && !isBComplete) return -1; 
-        if (!isAComplete && isBComplete) return 1;
+        // Helper to determine the "Tier" of an item
+        const getTier = (item) => {
+            const isCompleted = item.status === 'Completed';
+            const isCancelled = item.status === 'Cancelled'; // Detect Cancelled
+            const isUrgent = item.type && item.type.includes('Urgent');
+            const startTime = new Date(item.start_time);
+            const isStarted = now >= startTime;
+
+            // Tier 1: Urgent & Ongoing (Active NOW) - Exclude Cancelled
+            if (isUrgent && isStarted && !isCompleted && !isCancelled) return 1;
+
+            // Tier 2: Ongoing (Regular Active) - Exclude Cancelled
+            if (!isUrgent && isStarted && !isCompleted && !isCancelled) return 2;
+
+            // Tier 3: Completed (Pending BO Clean)
+            if (isCompleted) return 3;
+
+            // Tier 4: Cancelled (Below BO Clean Pending)
+            if (isCancelled) return 4;
+
+            // Tier 5: Upcoming (Not started yet)
+            return 5;
+        };
+
+        const tierA = getTier(a);
+        const tierB = getTier(b);
+
+        // First, sort by Tier (Lower number = Higher priority)
+        if (tierA !== tierB) return tierA - tierB;
+
+        // --- TIE-BREAKERS WITHIN TIERS ---
         
-        // Secondary Sort: Urgent items
-        const isAUrgent = a.type === 'Urgent'; 
-        const isBUrgent = b.type === 'Urgent';
-        if (isAUrgent && !isBUrgent) return -1; 
-        if (!isAUrgent && isBUrgent) return 1;
-        
-        // Tertiary Sort: Time
-        const startA = new Date(a.start_time).getTime(); 
-        const startB = new Date(b.start_time).getTime();
-        if (startA !== startB) return startA - startB;
-        
-        return (a.end_time ? new Date(a.end_time).getTime() : 9999999999999) - (b.end_time ? new Date(b.end_time).getTime() : 9999999999999);
+        // Tier 3 (Completed): Sort by Completion Time (Oldest first needs cleaning first)
+        if (tierA === 3) {
+            const completeA = a.completion_time ? new Date(a.completion_time).getTime() : 0;
+            const completeB = b.completion_time ? new Date(b.completion_time).getTime() : 0;
+            return completeA - completeB;
+        }
+
+        // Tier 1, 2, 4, 5: Sort by Start Time (Soonest first)
+        return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
     });
   };
 
+  // --- UPDATED FILTER LOGIC ---
   const filteredMaintenances = getSortedMaintenances(maintenances.filter(item => {
+    // 1. VIEW FILTER (Pending vs History) - Existing Logic
+    let isVisible = false;
     if (view === 'pending') {
-        if (item.status === 'Completed') return !item.bo_deleted; 
-        if (item.status === 'Cancelled') {
+        if (item.status === 'Completed') isVisible = !item.bo_deleted; 
+        else if (item.status === 'Cancelled') {
             const itemDate = toZonedTime(parseISO(item.start_time), timeZone); const nowDate = toZonedTime(new Date(), timeZone);
-            return format(itemDate, 'yyyy-MM-dd', { timeZone }) >= format(nowDate, 'yyyy-MM-dd', { timeZone });
+            isVisible = format(itemDate, 'yyyy-MM-dd', { timeZone }) >= format(nowDate, 'yyyy-MM-dd', { timeZone });
         }
-        return true;
+        else isVisible = true;
     } else {
-        if (item.status === 'Completed') return item.bo_deleted;
-        if (item.status === 'Cancelled') {
+        if (item.status === 'Completed') isVisible = item.bo_deleted;
+        else if (item.status === 'Cancelled') {
             const itemDate = toZonedTime(parseISO(item.start_time), timeZone); const nowDate = toZonedTime(new Date(), timeZone);
-            return format(itemDate, 'yyyy-MM-dd', { timeZone }) < format(nowDate, 'yyyy-MM-dd', { timeZone });
+            isVisible = format(itemDate, 'yyyy-MM-dd', { timeZone }) < format(nowDate, 'yyyy-MM-dd', { timeZone });
         }
-        return false;
+        else isVisible = false;
     }
+
+    if (!isVisible) return false;
+
+    // 2. SEARCH FILTER (Provider or Redmine)
+    if (searchTerm) {
+        const lowerTerm = searchTerm.toLowerCase();
+        const providerMatch = item.provider.toLowerCase().includes(lowerTerm);
+        const ticketMatch = item.redmine_ticket ? item.redmine_ticket.toString().includes(lowerTerm) : false;
+        if (!providerMatch && !ticketMatch) return false;
+    }
+
+    // 3. DATE FILTER
+    // 3. DATE FILTER (UPDATED FIX)
+    if (filterDate) {
+        // 1. Get Item Date in Shanghai Time (YYYY-MM-DD)
+        const itemZoned = toZonedTime(parseISO(item.start_time), timeZone);
+        const itemDateStr = format(itemZoned, 'yyyy-MM-dd', { timeZone });
+
+        // 2. Get Filter Date in Local Time (YYYY-MM-DD)
+        // We use dayjs here because it handles the JS Date object reliably
+        const filterDateStr = dayjs(filterDate).format('YYYY-MM-DD');
+
+        // 3. Compare Strings
+        if (itemDateStr !== filterDateStr) return false;
+    }
+    return true;
   }));
 
   const getMinutesSinceCompletion = (completionTime) => {
@@ -825,6 +920,12 @@ const Dashboard = ({ session }) => {
                 <button onClick={() => setIsNotifMenuOpen(!isNotifMenuOpen)} className={`p-2 rounded-full transition-colors relative ${isNotifMenuOpen ? 'bg-gray-100 text-black' : 'text-gray-400 hover:text-black hover:bg-gray-50'}`}><Bell size={18} />{notificationHistory.length > 0 && <div className="absolute top-1.5 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></div>}</button>
                 <NotificationMenu isOpen={isNotifMenuOpen} onClose={() => setIsNotifMenuOpen(false)} history={notificationHistory} onClear={() => setNotificationHistory([])} />
              </div>
+             {/* PROVIDER MANAGER BUTTON (ADMIN ONLY) */}
+             {isHighLevel && (
+               <button onClick={() => setIsProviderManagerOpen(true)} className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-full transition-colors" title="Manage Providers">
+                 <Settings size={18} />
+               </button>
+             )}
              {isHighLevel && <button onClick={() => { fetchUserList(); setIsUserModalOpen(true); }} className="p-2 text-gray-500 hover:text-black hover:bg-gray-100 rounded-full transition-colors"><Users size={18} /></button>}
             <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><LogOut size={18} /></button>
             <div className="h-4 w-px bg-gray-300"></div>
@@ -836,15 +937,93 @@ const Dashboard = ({ session }) => {
           </div>
         </header>
 
-        <div className="px-6 py-4 shrink-0 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-3"><h2 className="text-lg font-semibold text-gray-800">{view === 'pending' ? 'Pending Maintenance' : 'Maintenance History'}</h2><span className="bg-gray-200 text-gray-600 text-xs font-bold px-1.5 py-0.5 rounded-full">{filteredMaintenances.length}</span></div>
-          <div className="flex items-center gap-3"><div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm"><span className={`relative flex h-2 w-2`}>{isConnected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}<span className={`relative inline-flex rounded-full h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></span></span><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{isConnected ? 'Connected' : 'Offline'}</span></div><button onClick={handleManualRefresh} className="p-1.5 bg-white border border-gray-300 rounded text-gray-600 hover:bg-gray-50"><RefreshCcw size={14} className={isRefreshing ? "animate-spin" : ""} /></button></div>
+        {/* --- SUB-HEADER: SEARCH & FILTER --- */}
+        <div className="px-6 py-3 shrink-0 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between gap-4">
+          
+          {/* Left: Title */}
+          <div className="flex items-center gap-3 shrink-0">
+             <h2 className="text-lg font-semibold text-gray-800 hidden md:block">
+                {view === 'pending' ? 'Pending Maintenance' : 'Maintenance History'}
+             </h2>
+             <span className="bg-gray-900 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                {filteredMaintenances.length}
+             </span>
+          </div>
+
+          {/* Center/Right: Controls */}
+          <div className="flex-1 flex items-center justify-end gap-2 max-w-3xl">
+             
+             {/* 1. SEARCH BAR */}
+             <div className="relative group w-full max-w-xs transition-all focus-within:max-w-md">
+                <Search className="absolute left-3 top-2 text-gray-400 group-focus-within:text-indigo-500" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Search Provider or Redmine No" 
+                  className="w-full pl-9 pr-8 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500">
+                    <X size={12} />
+                  </button>
+                )}
+             </div>
+
+             {/* 2. DATE FILTER DROPDOWN */}
+             <div className="relative" ref={filterRef}>
+                <button 
+                  onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${filterDate ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                   <Filter size={14} />
+                   <span>{filterDate ? dayjs(filterDate).format('MMM DD') : 'Filter Date'}</span>
+                   {filterDate && <div onClick={(e) => { e.stopPropagation(); setFilterDate(null); }} className="p-0.5 hover:bg-indigo-100 rounded-full"><X size={10}/></div>}
+                </button>
+
+                {/* Dropdown Menu */}
+                {isFilterMenuOpen && (
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95">
+                      <div className="text-[10px] font-bold text-gray-400 uppercase px-2 py-1">Quick Filters</div>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                          <button onClick={() => { setFilterDate(new Date()); setIsFilterMenuOpen(false); }} className="px-3 py-2 bg-gray-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-xs font-medium text-left">Today</button>
+                          <button onClick={() => { setFilterDate(addDays(new Date(), 1)); setIsFilterMenuOpen(false); }} className="px-3 py-2 bg-gray-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-xs font-medium text-left">Tomorrow</button>
+                      </div>
+                      <div className="border-t border-gray-100 my-1"></div>
+                      <div className="p-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Select Specific Date</label>
+                          <DatePicker 
+                             value={filterDate ? dayjs(filterDate) : null} 
+                             onChange={(val) => { setFilterDate(val ? val.toDate() : null); setIsFilterMenuOpen(false); }} 
+                             slotProps={{ textField: { size: 'small', fullWidth: true } }} 
+                          />
+                      </div>
+                      <button onClick={() => { setFilterDate(null); setIsFilterMenuOpen(false); }} className="w-full mt-2 py-1.5 text-xs text-red-600 font-bold hover:bg-red-50 rounded-lg">Clear Filter</button>
+                  </div>
+                )}
+             </div>
+
+             {/* Separator */}
+             <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
+             {/* Connection & Refresh (Existing) */}
+             <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm">
+                <span className={`relative flex h-2 w-2`}>
+                   {isConnected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                   <span className={`relative inline-flex rounded-full h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                </span>
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider hidden sm:block">{isConnected ? 'Online' : 'Offline'}</span>
+             </div>
+             <button onClick={handleManualRefresh} className="p-1.5 bg-white border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors" title="Refresh Data">
+                <RefreshCcw size={14} className={isRefreshing ? "animate-spin" : ""} />
+             </button>
+
+          </div>
         </div>
 
-        {/* TABLE WRAPPER: Added 'overscroll-none' for smoother touchpad scrolling */}
+        {/* TABLE WRAPPER */}
         <div className="flex-1 w-full overflow-y-auto overscroll-none">
           <table className="w-full text-left text-sm border-collapse">
-            {/* TABLE HEADER: Removed 'shadow-sm' */}
             <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 <th className="px-6 py-3 w-12 text-center">#</th>
@@ -891,7 +1070,6 @@ const Dashboard = ({ session }) => {
                   </td>
                   <td className="px-6 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        {/* UPDATE: Extend Button Disabled Logic */}
                         <button 
                             onClick={() => handleOpenResolution(item, 'extend')}
                             disabled={item.status === 'Completed' || item.status === 'Cancelled'}
@@ -919,8 +1097,22 @@ const Dashboard = ({ session }) => {
           </table>
         </div>
         
+        {/* MODALS */}
         <ScheduleModal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} maintenances={maintenances} onOpenEntryModal={handleOpenNewEntry} />
-        <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} formData={formData} setFormData={setFormData} handleConfirm={handleConfirm} loading={loading} editingId={editingId} errors={errors} setErrors={setErrors} existingMaintenances={maintenances} />
+        {/* UPDATED: Pass providersDB to EntryModal */}
+        <EntryModal 
+            isOpen={isModalOpen} 
+            onClose={() => setIsModalOpen(false)} 
+            formData={formData} 
+            setFormData={setFormData} 
+            handleConfirm={handleConfirm} 
+            loading={loading} 
+            editingId={editingId} 
+            errors={errors} 
+            setErrors={setErrors} 
+            existingMaintenances={maintenances}
+            providersDB={providersList} 
+        />
         <CompletionModal isOpen={isCompletionModalOpen} onClose={() => setIsCompletionModalOpen(false)} onConfirm={confirmCompletion} item={completingItem} sopChecks={sopChecks} setSopChecks={setSopChecks} />
         <UserModal isOpen={isUserModalOpen} onClose={() => setIsUserModalOpen(false)} userTab={userTab} setUserTab={setUserTab} userList={userList} userForm={userForm} setUserForm={setUserForm} loading={loading} handleCreateUser={handleCreateUser} handleUpdateUser={handleUpdateUser} handleDeleteUser={handleDeleteUser} editingUser={editingUser} setEditingUser={setEditingUser} newUserCredentials={newUserCredentials} setNewUserCredentials={setNewUserCredentials} generatePassword={() => { const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"; let pass = ""; for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length)); setUserForm(prev => ({ ...prev, password: pass })); }} />
         <DeleteModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleConfirmDelete} onReject={handleRejectDelete} loading={loading} isDeletionRequest={maintenances.find(m => m.id === deletingId)?.deletion_pending} />
@@ -930,6 +1122,8 @@ const Dashboard = ({ session }) => {
         <DeleteRequestModal isOpen={isDeleteRequestModalOpen} onClose={() => setIsDeleteRequestModalOpen(false)} item={deleteRequestId} onConfirm={handleRequestDeleteConfirm} loading={loading} />
         <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} userName={userProfile.work_name || 'User'} triggerNotification={triggerNotification} />
         <ConfirmationModal isOpen={!!actionConfig} onClose={() => setActionConfig(null)} onConfirm={() => executeAction(actionConfig?.type, actionConfig?.payload)} config={{ title: actionConfig?.title || '', message: actionConfig?.message || '', type: actionConfig?.type?.includes('UNDO') ? 'warning' : actionConfig?.type === 'CONFIRM_BO_DELETE' ? 'danger' : 'info', confirmText: actionConfig?.confirmText || 'Confirm' }} loading={loading} />
+        {/* NEW: Provider Manager Modal */}
+        <ProviderManagerModal isOpen={isProviderManagerOpen} onClose={() => setIsProviderManagerOpen(false)} />
       </div>
     </LocalizationProvider>
   );

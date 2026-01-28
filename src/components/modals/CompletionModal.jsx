@@ -49,14 +49,12 @@ const CompletionModal = ({
 
   if (!isOpen || !item) return null;
 
-  // --- LOGIC: DETECT TYPE & EARLY ---
-  const isUrgent = item.type && item.type.toLowerCase().includes("urgent");
-  const isNotice = item.is_until_further_notice;
-  const showRobotNotify = isUrgent || isNotice;
-
   // --- DETECT EXTENDED MAINTENANCE ---
   const isExtended =
     item.type === "Extended Maintenance" || item.is_until_further_notice;
+
+  const isUrgent = item.type && item.type.toLowerCase().includes("urgent");
+  const showRobotNotify = isUrgent || item.type === 'Extended Maintenance';
 
   // --- NEW: DETECT PART OF THE GAME (Includes Urgent variant) ---
   const isPartGame = item.type && item.type.includes("Part of the Game");
@@ -122,10 +120,9 @@ const CompletionModal = ({
   };
 
   const getManualOpenMsg = () => {
-    // Update: Dynamic message. If early, say "before scheduled time". If just extended, say "completed".
     const reason = isEarly
       ? "have completed before the scheduled end time"
-      : "maintenance has been completed";
+      : "has been completed"; // <--- FIXED
     return `maintenance for ${item.provider}, ${reason}. Please help to open. Thank You.`;
   };
 

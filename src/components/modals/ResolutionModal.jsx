@@ -63,14 +63,18 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
       checklist.redmineUpdate;
 
   const getManualCloseMsg = () => {
-      return `Urgent: Maintenance for ${item.provider} has been extended at the last minute. Please help to manually close the game immediately to prevent auto-open. Thank You.`;
+      return `Maintenance for ${item.provider} has been extended. Please help to close the game, Thank You.`;
   };
 
   const getInternalGroupMsg = () => `Maintenance time update for ${item.provider}, BO8.2 announcement has been updated.`;
   
   const getAnnouncementBody = () => {
-    const timeStr = extensionType === 'notice' ? "until further notice" : `${newEndTime?.format('YYYY-MM-DD HH:mm')} (GMT+8)`;
-    return `Hello there,\n\nPlease be informed that 【${item.provider}】 maintenance has been extended ${timeStr}.\nWe apologize for the inconvenience caused.\n\nThank you.`;
+    if (extensionType === 'notice') {
+        return `Hello there\nPlease be informed that 【${item.provider}】 will extend the maintenance until further notice.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+    }
+    // Specific Time Format
+    const timeStr = newEndTime?.format('YYYY-MM-DD HH:mm');
+    return `Hello there\nPlease be informed that 【${item.provider}】 will extend the maintenance until ${timeStr}(GMT+8).\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
   };
 
   const getRedmineDisplayId = (ticketNum) => {
@@ -237,7 +241,7 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                             <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2"><FileText size={14} /> SOP Checklist <span className="text-red-500">*</span></h5>
                             <div className="space-y-2">
                                 {isLateExtension && renderStep('manualClose', '!', <><strong>CRITICAL: Manual Game Close</strong><br/>Late extension. Manually close game to prevent auto-open.</>, <Lock size={16} />, true)}
-                                {renderStep('boUpdate', '1', <>Update <strong>BO8.2</strong> Announcement.<br/>{extensionType === 'notice' ? 'Check "Until Further Notice".' : 'Update the "End Time".'}</>)}
+                                {renderStep('boUpdate', '1', <>Update <strong>BO8.2</strong> Announcement.<br/>{extensionType === 'notice' ? 'Check "Until Further Notice".' : 'Update the "Start Content".'}</>)}
                                 {renderStep('internalNotify', '2', <>Notify <strong>IP Internal Group</strong>.<br/>(Use copy text on right)</>)}
                                 {renderStep('notifyMerchant', '3', <>Notify Merchant via Robot's BO Select:<br/><strong>【IC-Maintenance&Promo of providers】</strong></>)}
                                 {renderStep('redmineUpdate', '4', <>Update <strong>Redmine & Sync BO8.7</strong>.</>)}
@@ -257,14 +261,6 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                                     </div>
                                 </div>
                             )}
-
-                            <div className="space-y-1 shrink-0">
-                                <label className="text-[10px] font-bold text-gray-400">FOR INTERNAL GROUP</label>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">{getInternalGroupMsg()}</div>
-                                    <CopyButton text={getInternalGroupMsg()} />
-                                </div>
-                            </div>
 
                             {/* Expanded Announcement Section */}
                             <div className="space-y-1 flex-1 flex flex-col min-h-0">

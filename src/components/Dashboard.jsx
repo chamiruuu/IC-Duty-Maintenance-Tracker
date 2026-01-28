@@ -1519,13 +1519,15 @@ const Dashboard = ({ session }) => {
             )}
 
             {/* --- ARCHIVE BUTTON (VISIBLE TO ALL FOR NOW) --- */}
-            <button
-              onClick={() => setIsArchiveModalOpen(true)}
-              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-              title="Open Archive Manager"
-            >
-              <Archive size={20} />
-            </button>
+            {['admin', 'leader'].includes(userProfile?.role) && (
+                <button
+                  onClick={() => setIsArchiveModalOpen(true)}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Data Archival Manager (Admins Only)"
+                >
+                  <Archive size={20} />
+                </button>
+            )}
 
             {isHighLevel && (
               <button

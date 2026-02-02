@@ -1292,24 +1292,24 @@ const Dashboard = ({ session }) => {
       // Helper to determine the "Tier" of an item
       const getTier = (item) => {
         const isCompleted = item.status === "Completed";
-        const isCancelled = item.status === "Cancelled"; // Detect Cancelled
+        const isCancelled = item.status === "Cancelled"; 
         const isUrgent = item.type && item.type.includes("Urgent");
         const startTime = new Date(item.start_time);
         const isStarted = now >= startTime;
 
-        // Tier 1: Urgent & Ongoing (Active NOW) - Exclude Cancelled
+        // Tier 1: Urgent & Ongoing
         if (isUrgent && isStarted && !isCompleted && !isCancelled) return 1;
 
-        // Tier 2: Ongoing (Regular Active) - Exclude Cancelled
+        // Tier 2: Regular Ongoing
         if (!isUrgent && isStarted && !isCompleted && !isCancelled) return 2;
 
-        // Tier 3: Completed (Pending BO Clean)
+        // Tier 3: Completed (Pending Clean)
         if (isCompleted) return 3;
 
-        // Tier 4: Cancelled (Below BO Clean Pending)
-        if (isCancelled) return 4;
+        // Tier 4: Upcoming OR Cancelled (Sorted purely by Date)
+        // We group them together so they form a single timeline
+        if (!isStarted || isCancelled) return 4; 
 
-        // Tier 5: Upcoming (Not started yet)
         return 5;
       };
 
@@ -1321,7 +1321,7 @@ const Dashboard = ({ session }) => {
 
       // --- TIE-BREAKERS WITHIN TIERS ---
 
-      // Tier 3 (Completed): Sort by Completion Time (Oldest first needs cleaning first)
+      // Tier 3 (Completed): Sort by Completion Time (Oldest first = Needs cleaning longest)
       if (tierA === 3) {
         const completeA = a.completion_time
           ? new Date(a.completion_time).getTime()
@@ -1332,7 +1332,13 @@ const Dashboard = ({ session }) => {
         return completeA - completeB;
       }
 
-      // Tier 1, 2, 4, 5: Sort by Start Time (Soonest first)
+      // Tier 5 (Cancelled): Sort by Start Time (Newest/Latest First)
+      // This keeps recent cancellations visible, and pushes old ones to the bottom.
+      if (tierA === 5) {
+        return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+      }
+
+      // Tier 1, 2, 4 (Active & Upcoming): Sort by Start Time (Soonest First)
       return (
         new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );

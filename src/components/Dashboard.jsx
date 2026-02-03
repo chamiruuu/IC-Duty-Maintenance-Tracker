@@ -1297,20 +1297,20 @@ const Dashboard = ({ session }) => {
         const startTime = new Date(item.start_time);
         const isStarted = now >= startTime;
 
-        // Tier 1: Urgent & Ongoing
+        // Tier 1: Urgent & Ongoing (Top Priority)
         if (isUrgent && isStarted && !isCompleted && !isCancelled) return 1;
 
         // Tier 2: Regular Ongoing
         if (!isUrgent && isStarted && !isCompleted && !isCancelled) return 2;
 
-        // Tier 3: Completed (Pending Clean)
+        // Tier 3: Completed (Pending BO Clean)
         if (isCompleted) return 3;
 
-        // Tier 4: Upcoming OR Cancelled (Sorted purely by Date)
-        // We group them together so they form a single timeline
+        // Tier 4: Upcoming OR Cancelled 
+        // We group them together here so we can sort them by Date vs Status below
         if (!isStarted || isCancelled) return 4; 
 
-        return 5;
+        return 5; // Fallback
       };
 
       const tierA = getTier(a);
@@ -1332,13 +1332,33 @@ const Dashboard = ({ session }) => {
         return completeA - completeB;
       }
 
-      // Tier 5 (Cancelled): Sort by Start Time (Newest/Latest First)
-      // This keeps recent cancellations visible, and pushes old ones to the bottom.
-      if (tierA === 5) {
-        return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+      // Tier 4 (Upcoming & Cancelled): The "Daily Block" Sort
+      if (tierA === 4) {
+        // 1. Sort by Day First (Ignore time)
+        const dateA = new Date(a.start_time).setHours(0,0,0,0);
+        const dateB = new Date(b.start_time).setHours(0,0,0,0);
+
+        if (dateA !== dateB) {
+            // Earlier date comes first (Today before Tomorrow)
+            return dateA - dateB;
+        }
+
+        // 2. Same Day? Check Status (Upcoming must be above Cancelled)
+        const isCancelledA = a.status === 'Cancelled';
+        const isCancelledB = b.status === 'Cancelled';
+
+        if (isCancelledA !== isCancelledB) {
+            // If A is Cancelled (true), it should go AFTER B (false)
+            // false - true = -1 (Upcoming comes first)
+            // true - false = 1  (Cancelled comes last)
+            return isCancelledA - isCancelledB;
+        }
+
+        // 3. Same Day & Same Status? Sort by Time
+        return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
       }
 
-      // Tier 1, 2, 4 (Active & Upcoming): Sort by Start Time (Soonest First)
+      // Fallback for Tiers 1 & 2: Sort by Start Time (Soonest First)
       return (
         new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );

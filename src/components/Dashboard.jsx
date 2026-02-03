@@ -1368,7 +1368,7 @@ const Dashboard = ({ session }) => {
   // --- UPDATED FILTER LOGIC ---
   const filteredMaintenances = getSortedMaintenances(
     maintenances.filter((item) => {
-      // 1. VIEW FILTER (Pending vs History) - Existing Logic
+      // 1. VIEW FILTER (Pending vs History)
       let isVisible = false;
       if (view === "pending") {
         if (item.status === "Completed") isVisible = !item.bo_deleted;
@@ -1402,22 +1402,58 @@ const Dashboard = ({ session }) => {
         if (!providerMatch && !ticketMatch) return false;
       }
 
-      // 3. DATE FILTER
-      // 3. DATE FILTER (UPDATED FIX)
+      // 3. DATE FILTER (Smart Range & Face Value Fix)
       if (filterDate) {
-        // 1. Get Item Date in Shanghai Time (YYYY-MM-DD)
-        const itemZoned = toZonedTime(parseISO(item.start_time), timeZone);
-        const itemDateStr = format(itemZoned, "yyyy-MM-dd", { timeZone });
+        // A. Get User Selection as "YYYY-MM-DD" (Raw Face Value)
+        // We ignore browser timezones and just grab the numbers the user clicked.
+        const userSelectedDate = new Date(filterDate);
+        const filterStr = [
+          userSelectedDate.getFullYear(),
+          String(userSelectedDate.getMonth() + 1).padStart(2, "0"),
+          String(userSelectedDate.getDate()).padStart(2, "0"),
+        ].join("-");
 
-        // 2. Get Filter Date in Local Time (YYYY-MM-DD)
-        // We use dayjs here because it handles the JS Date object reliably
-        const filterDateStr = dayjs(filterDate).format("YYYY-MM-DD");
+        // B. Get Item Start as "YYYY-MM-DD" (In Shanghai/System Timezone)
+        const startZoned = toZonedTime(parseISO(item.start_time), timeZone);
+        const startStr = format(startZoned, "yyyy-MM-dd", { timeZone });
 
-        // 3. Compare Strings
-        if (itemDateStr !== filterDateStr) return false;
+        // --- CHECK 1: CANCELLED ITEMS (Strict Match) ---
+        // Cancelled items should only appear on their specific start date.
+        if (item.status === "Cancelled") {
+          if (startStr !== filterStr) return false;
+        }
+        // --- CHECK 2: ACTIVE / COMPLETED ITEMS (Range Match) ---
+        else {
+          // Calculate the "Effective End Date"
+          let endStr = startStr;
+
+          if (item.end_time) {
+            // Scenario A: Has a scheduled end time
+            const endZoned = toZonedTime(parseISO(item.end_time), timeZone);
+            endStr = format(endZoned, "yyyy-MM-dd", { timeZone });
+          } else if (item.status === "Completed" && item.completion_time) {
+            // Scenario B: Completed "Until Further Notice" -> Ends at actual completion
+            const compZoned = toZonedTime(
+              parseISO(item.completion_time),
+              timeZone
+            );
+            endStr = format(compZoned, "yyyy-MM-dd", { timeZone });
+          } else {
+            // Scenario C: Active "Until Further Notice" -> Goes on forever (9999)
+            // If it started before today, it is still active today.
+            endStr = "9999-12-31";
+          }
+
+          // THE LOGIC: Is the Filter Date inside [Start, End]?
+          // String comparison works perfectly for YYYY-MM-DD format.
+          if (filterStr < startStr || filterStr > endStr) {
+            return false;
+          }
+        }
       }
+      
       return true;
-    }),
+    })
   );
 
   const getMinutesSinceCompletion = (completionTime) => {
@@ -1704,10 +1740,15 @@ const Dashboard = ({ session }) => {
                       value={filterDate ? dayjs(filterDate) : null}
                       onChange={(val) => {
                         setFilterDate(val ? val.toDate() : null);
-                        setIsFilterMenuOpen(false);
+                        // Optional: Comment this out if you want the menu to stay open after selection
+                        setIsFilterMenuOpen(false); 
                       }}
                       slotProps={{
                         textField: { size: "small", fullWidth: true },
+                        // ⬇️ ADD THIS SECTION ⬇️
+                        popper: {
+                          disablePortal: true, // Forces the calendar to stay inside your menu DOM
+                        },
                       }}
                     />
                   </div>

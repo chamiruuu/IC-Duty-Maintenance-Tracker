@@ -66,7 +66,7 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
       return `Maintenance for ${item.provider} has been extended. Please help to close the game, Thank You.`;
   };
 
-  const getInternalGroupMsg = () => `Maintenance time update for ${item.provider}, BO8.2 announcement has been updated.`;
+  const getInternalGroupMsg = () => `${item.provider} maintenance time extended. BO8.2 announcement has been updated.`;
   
   const getAnnouncementBody = () => {
     if (extensionType === 'notice') {
@@ -261,6 +261,17 @@ const ResolutionModal = ({ isOpen, onClose, item, onExtend, onComplete, loading,
                                     </div>
                                 </div>
                             )}
+
+                            {/* INTERNAL GROUP MSG SECTION */}
+                                <div className="space-y-1 shrink-0">
+                                    <label className="text-[10px] font-bold text-gray-400">INTERNAL GROUP MSG</label>
+                                    <div className="flex gap-2">
+                                        <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">
+                                            {getInternalGroupMsg()}
+                                        </div>
+                                        <CopyButton text={getInternalGroupMsg()} />
+                                    </div>
+                                </div>
 
                             {/* Expanded Announcement Section */}
                             <div className="space-y-1 flex-1 flex flex-col min-h-0">

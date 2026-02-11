@@ -1,28 +1,42 @@
-import React from 'react';
-import { X, Plus, Calendar, ExternalLink, Check, AlertCircle, Clock } from 'lucide-react';
-import { format, addDays, startOfWeek, isSameDay, isToday as checkIsToday } from 'date-fns';
-import { getChecklistForDate } from '../../lib/scheduleRules';
+import React from "react";
+import {
+  X,
+  Plus,
+  Calendar,
+  ExternalLink,
+  Check,
+  AlertCircle,
+  Clock,
+} from "lucide-react";
+import {
+  format,
+  addDays,
+  startOfWeek,
+  isSameDay,
+  isToday as checkIsToday,
+} from "date-fns";
+import { getChecklistForDate } from "../../lib/scheduleRules";
 
-const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/"; 
+const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
 
 const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
   if (!isOpen) return null;
 
   const today = new Date();
-  
+
   // --- UPDATED LOGIC: ROLLING 7-DAY VIEW ---
   // Instead of starting from Monday (startOfWeek), we start from TODAY.
   // This solves the issue of not seeing "Tomorrow" on Sundays.
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(today, i));
 
   // Helper to format Redmine ID
-  const getRedmineId = (ticket) => ticket ? `CS-${ticket.toString().replace(/\D/g, '')}` : 'Ticket';
+  const getRedmineId = (ticket) =>
+    ticket ? `CS-${ticket.toString().replace(/\D/g, "")}` : "Ticket";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm animate-in fade-in duration-200">
       {/* Modal Container */}
       <div className="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
-        
         {/* Header Section */}
         <div className="px-8 py-6 bg-white border-b border-gray-200 flex items-center justify-between sticky top-0 z-10">
           <div>
@@ -32,11 +46,15 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
             </h2>
             <p className="text-sm text-gray-500 font-medium mt-1">
               {/* Updated Header Date Range to match the new Rolling View */}
-              Maintenance compliance overview for <span className="text-gray-900 font-bold">{format(weekDays[0], 'MMM d')} - {format(weekDays[6], 'MMM d, yyyy')}</span>
+              Maintenance compliance overview for{" "}
+              <span className="text-gray-900 font-bold">
+                {format(weekDays[0], "MMM d")} -{" "}
+                {format(weekDays[6], "MMM d, yyyy")}
+              </span>
             </p>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all"
           >
             <X size={24} />
@@ -46,32 +64,36 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
         {/* Scrollable Grid Canvas */}
         <div className="flex-1 overflow-y-auto p-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            
             {weekDays.map((date, i) => {
               const checklist = getChecklistForDate(date, maintenances);
               const isToday = checkIsToday(date);
-              // Since we start from Today, 'isPast' is theoretically irrelevant for the view, 
+              // Since we start from Today, 'isPast' is theoretically irrelevant for the view,
               // but we keep the logic just in case you use navigation later.
-              const isPast = date < new Date().setHours(0,0,0,0);
+              const isPast = date < new Date().setHours(0, 0, 0, 0);
               const isEmpty = checklist.length === 0;
 
               return (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className={`flex flex-col rounded-xl border transition-all duration-200 
-                    ${isToday 
-                      ? 'bg-white border-gray-900 shadow-md ring-1 ring-gray-900' 
-                      : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                    } ${isPast && !isToday ? 'opacity-70 bg-gray-50' : ''}`}
+                    ${
+                      isToday
+                        ? "bg-white border-gray-900 shadow-md ring-1 ring-gray-900"
+                        : "bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                    } ${isPast && !isToday ? "opacity-70 bg-gray-50" : ""}`}
                 >
                   {/* Card Header: Date */}
-                  <div className={`px-5 py-4 border-b flex items-baseline justify-between ${isToday ? 'border-gray-900/10 bg-gray-50/50' : 'border-gray-100'}`}>
+                  <div
+                    className={`px-5 py-4 border-b flex items-baseline justify-between ${isToday ? "border-gray-900/10 bg-gray-50/50" : "border-gray-100"}`}
+                  >
                     <div>
                       <span className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-0.5">
-                        {format(date, 'EEEE')}
+                        {format(date, "EEEE")}
                       </span>
-                      <span className={`text-xl font-bold ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
-                        {format(date, 'MMM dd')}
+                      <span
+                        className={`text-xl font-bold ${isToday ? "text-blue-600" : "text-gray-900"}`}
+                      >
+                        {format(date, "MMM dd")}
                       </span>
                     </div>
                     {isToday && (
@@ -91,37 +113,56 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
                       checklist.map((item, idx) => (
                         <div key={idx} className="group">
                           {/* Task Row */}
-                          <div className="flex flex-col gap-2 mb-2">
-                            
-                            {/* Top Line: Provider Name & Status Icon */}
+                          <div className="flex flex-col gap-2 mb-2 bg-white p-2 rounded-lg border border-transparent hover:border-gray-100 transition-colors">
+                            {/* Top Line: Provider Name + Link + Status Icon */}
                             <div className="flex items-center justify-between">
-                              <span className={`text-sm font-semibold ${item.status === 'ok' ? 'text-gray-700' : 'text-gray-900'}`}>
-                                {item.provider}
-                              </span>
                               
+                              {/* Left Side: Name & Calendar Link */}
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-sm font-semibold ${item.status === 'ok' ? 'text-gray-700' : 'text-gray-900'}`}>
+                                  {item.provider}
+                                </span>
+                                
+                                {/* NEW: Minimalist Calendar Icon Link */}
+                                {item.statusLink && (
+                                  <a 
+                                    href={item.statusLink} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="p-1 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
+                                    title="Check Schedule Board"
+                                  >
+                                    <Calendar size={14} strokeWidth={2.5} />
+                                  </a>
+                                )}
+                              </div>
+                              
+                              {/* Right Side: Status Icon (Green Check / Red Pulse) */}
                               {item.status === 'ok' ? (
-                                <div className="h-5 w-5 rounded-full bg-emerald-100 flex items-center justify-center">
+                                <div className="h-5 w-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
                                   <Check size={12} className="text-emerald-600" strokeWidth={3} />
                                 </div>
                               ) : (
-                                <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></div>
+                                <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0 mr-1.5"></div>
                               )}
                             </div>
 
                             {/* Bottom Line: Action Button OR Redmine Link */}
                             <div>
-                              {item.status === 'missing' ? (
-                                <button 
-                                  onClick={() => onOpenEntryModal(item.provider, date)}
-                                  className="w-full py-1.5 flex items-center justify-center gap-1.5 rounded border border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-500 hover:text-gray-900 text-xs font-medium transition-all group-hover:border-solid"
+                              {item.status === "missing" ? (
+                                <button
+                                  onClick={() =>
+                                    onOpenEntryModal(item.provider, date)
+                                  }
+                                  className="w-full py-1.5 flex items-center justify-center gap-1.5 rounded border border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-500 hover:text-gray-900 text-xs font-medium transition-all group-hover:border-solid mt-1"
                                 >
                                   <Plus size={12} /> Create Entry
                                 </button>
                               ) : (
                                 // CONFIRMED STATE
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center justify-between mt-1">
                                   {item.entry?.redmine_ticket ? (
-                                    <a 
+                                    <a
                                       href={`${REDMINE_BASE_URL}${item.entry.redmine_ticket}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
@@ -143,7 +184,7 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
 
                           {/* Extra Note (e.g. Night Shift) */}
                           {item.note && (
-                            <div className="text-[10px] text-gray-400 flex items-center gap-1 pl-1">
+                            <div className="text-[10px] text-gray-400 flex items-center gap-1 pl-2 mb-2">
                               <Clock size={10} /> {item.note}
                             </div>
                           )}
@@ -156,7 +197,6 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
             })}
           </div>
         </div>
-
       </div>
     </div>
   );

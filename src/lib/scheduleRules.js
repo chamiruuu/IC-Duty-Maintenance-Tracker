@@ -1,36 +1,36 @@
 import { isSameDay, parseISO, isMonday, getDate } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz'; // <--- Import Timezone Helper
+import { toZonedTime } from 'date-fns-tz';
 
-const TIMEZONE = 'Asia/Shanghai'; // <--- Define Standard Timezone
+const TIMEZONE = 'Asia/Shanghai';
 
-// 0=Sun, 1=Mon, ..., 5=Fri
 export const WEEKLY_SCHEDULE = {
-    1: [ // MONDAY Target
+    1: [ 
         { name: "SA Gaming", type: "weekly" },
         { name: "WM", type: "weekly" },
         { name: "GClub Live", type: "weekly" },
         { name: "OG Plus", type: "first_monday" },
         { name: "ALLBET", type: "first_monday" }
     ],
-    2: [ // TUESDAY Target
+    2: [ 
         { name: "BG Casino", type: "weekly" },
         { name: "JILI", type: "weekly" },
         { name: "QQ4D", type: "weekly" },
         { name: "MG Live", type: "weekly" }
     ],
-    3: [ // WEDNESDAY Target
-        { name: "AWC", type: "weekly" },
-        { name: "Sexy Casino", type: "weekly" },
+    3: [ 
+        // 👇 ADDED STATUS LINKS HERE
+        { name: "AWC", type: "weekly", statusLink: "https://allwecan.info/maint-board/19:e1edf14c6eec44ee8ff6d8d680fcda07@thread.skype" },
+        { name: "Sexy Casino", type: "weekly", statusLink: "https://allwecan.info/maint-board/19:e1edf14c6eec44ee8ff6d8d680fcda07@thread.skype" },
         { name: "DG Casino", type: "weekly" },
         { name: "CQ9 Slots", type: "weekly" },
         { name: "RSG", type: "weekly" }
     ],
-    4: [], // THURSDAY Target
-    5: [ // FRIDAY Target
+    4: [], 
+    5: [ 
         { name: "C-Sports", type: "weekly", note: "Night Shift Confirm" }
     ],
-    6: [], // SATURDAY Target
-    0: []  // SUNDAY Target
+    6: [], 
+    0: []  
 };
 
 const isFirstMondayOfMonth = (date) => {
@@ -41,30 +41,21 @@ export const getChecklistForDate = (targetDate, maintenanceList) => {
     const dayIndex = targetDate.getDay();
     const rules = WEEKLY_SCHEDULE[dayIndex] || [];
 
-    // 1. Filter rules that apply to this specific date
     const activeRules = rules.filter(rule => {
         if (rule.type === 'first_monday') return isFirstMondayOfMonth(targetDate);
         return true;
     });
 
-    // 2. Check against DB
     return activeRules.map(rule => {
-        // Find if ANY entry exists for this provider on this date (Scheduled OR Cancelled)
         const foundEntry = maintenanceList.find(m => {
             if (!m.start_time) return false;
 
-            // Case-insensitive name check
             const pName = m.provider.toLowerCase();
             const rName = rule.name.toLowerCase();
             const nameMatch = pName.includes(rName) || rName.includes(pName);
 
-            // --- TIMEZONE FIX ---
-            // Convert the DB ISO String (UTC) to Shanghai Time
             const dbDateZoned = toZonedTime(parseISO(m.start_time), TIMEZONE);
-            
-            // Compare the Shanghai-converted DB date vs the Target Date
             const dateMatch = isSameDay(dbDateZoned, targetDate);
-            // --------------------
 
             return nameMatch && dateMatch;
         });
@@ -72,7 +63,8 @@ export const getChecklistForDate = (targetDate, maintenanceList) => {
         return {
             provider: rule.name,
             note: rule.note,
-            status: foundEntry ? 'ok' : 'missing', // 'ok' = Green, 'missing' = Red
+            statusLink: rule.statusLink, // 👇 ADDED THIS LINE TO PASS THE LINK
+            status: foundEntry ? 'ok' : 'missing',
             entry: foundEntry
         };
     });

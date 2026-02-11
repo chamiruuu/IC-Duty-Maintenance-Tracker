@@ -79,7 +79,7 @@ import ScheduleModal from "./modals/ScheduleModal";
 import ProviderManagerModal from "./modals/ProviderManagerModal"; // NEW IMPORT
 import { getChecklistForDate } from "../lib/scheduleRules";
 import { generateUrgentScript } from "../lib/scriptGenerator";
-import ArchiveManagerModal from './modals/ArchiveManagerModal';
+import ArchiveManagerModal from "./modals/ArchiveManagerModal";
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
 
@@ -1292,7 +1292,7 @@ const Dashboard = ({ session }) => {
       // Helper to determine the "Tier" of an item
       const getTier = (item) => {
         const isCompleted = item.status === "Completed";
-        const isCancelled = item.status === "Cancelled"; 
+        const isCancelled = item.status === "Cancelled";
         const isUrgent = item.type && item.type.includes("Urgent");
         const startTime = new Date(item.start_time);
         const isStarted = now >= startTime;
@@ -1306,9 +1306,9 @@ const Dashboard = ({ session }) => {
         // Tier 3: Completed (Pending BO Clean)
         if (isCompleted) return 3;
 
-        // Tier 4: Upcoming OR Cancelled 
+        // Tier 4: Upcoming OR Cancelled
         // We group them together here so we can sort them by Date vs Status below
-        if (!isStarted || isCancelled) return 4; 
+        if (!isStarted || isCancelled) return 4;
 
         return 5; // Fallback
       };
@@ -1335,27 +1335,29 @@ const Dashboard = ({ session }) => {
       // Tier 4 (Upcoming & Cancelled): The "Daily Block" Sort
       if (tierA === 4) {
         // 1. Sort by Day First (Ignore time)
-        const dateA = new Date(a.start_time).setHours(0,0,0,0);
-        const dateB = new Date(b.start_time).setHours(0,0,0,0);
+        const dateA = new Date(a.start_time).setHours(0, 0, 0, 0);
+        const dateB = new Date(b.start_time).setHours(0, 0, 0, 0);
 
         if (dateA !== dateB) {
-            // Earlier date comes first (Today before Tomorrow)
-            return dateA - dateB;
+          // Earlier date comes first (Today before Tomorrow)
+          return dateA - dateB;
         }
 
         // 2. Same Day? Check Status (Upcoming must be above Cancelled)
-        const isCancelledA = a.status === 'Cancelled';
-        const isCancelledB = b.status === 'Cancelled';
+        const isCancelledA = a.status === "Cancelled";
+        const isCancelledB = b.status === "Cancelled";
 
         if (isCancelledA !== isCancelledB) {
-            // If A is Cancelled (true), it should go AFTER B (false)
-            // false - true = -1 (Upcoming comes first)
-            // true - false = 1  (Cancelled comes last)
-            return isCancelledA - isCancelledB;
+          // If A is Cancelled (true), it should go AFTER B (false)
+          // false - true = -1 (Upcoming comes first)
+          // true - false = 1  (Cancelled comes last)
+          return isCancelledA - isCancelledB;
         }
 
         // 3. Same Day & Same Status? Sort by Time
-        return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+        return (
+          new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+        );
       }
 
       // Fallback for Tiers 1 & 2: Sort by Start Time (Soonest First)
@@ -1435,7 +1437,7 @@ const Dashboard = ({ session }) => {
             // Scenario B: Completed "Until Further Notice" -> Ends at actual completion
             const compZoned = toZonedTime(
               parseISO(item.completion_time),
-              timeZone
+              timeZone,
             );
             endStr = format(compZoned, "yyyy-MM-dd", { timeZone });
           } else {
@@ -1451,9 +1453,9 @@ const Dashboard = ({ session }) => {
           }
         }
       }
-      
+
       return true;
-    })
+    }),
   );
 
   const getMinutesSinceCompletion = (completionTime) => {
@@ -1581,14 +1583,14 @@ const Dashboard = ({ session }) => {
             )}
 
             {/* --- ARCHIVE BUTTON (VISIBLE TO ALL FOR NOW) --- */}
-            {['admin', 'leader'].includes(userProfile?.role) && (
-                <button
-                  onClick={() => setIsArchiveModalOpen(true)}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Data Archival Manager (Admins Only)"
-                >
-                  <Archive size={20} />
-                </button>
+            {["admin", "leader"].includes(userProfile?.role) && (
+              <button
+                onClick={() => setIsArchiveModalOpen(true)}
+                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Data Archival Manager (Admins Only)"
+              >
+                <Archive size={20} />
+              </button>
             )}
 
             {isHighLevel && (
@@ -1741,7 +1743,7 @@ const Dashboard = ({ session }) => {
                       onChange={(val) => {
                         setFilterDate(val ? val.toDate() : null);
                         // Optional: Comment this out if you want the menu to stay open after selection
-                        setIsFilterMenuOpen(false); 
+                        setIsFilterMenuOpen(false);
                       }}
                       slotProps={{
                         textField: { size: "small", fullWidth: true },
@@ -1877,12 +1879,37 @@ const Dashboard = ({ session }) => {
                       <button
                         onClick={() => handleUndoCompletion(item)}
                         disabled={!isHighLevel}
-                        className={`flex items-center gap-1.5 text-emerald-600 font-bold transition-all ${isHighLevel ? "hover:text-red-600 cursor-pointer" : "cursor-default"}`}
+                        className={`group/timebtn flex items-center gap-1.5 text-emerald-600 font-bold transition-all ${
+                          isHighLevel
+                            ? "hover:text-red-600 cursor-pointer"
+                            : "cursor-default"
+                        }`}
                         title={
                           isHighLevel ? "Click to UNDO Completion" : "Completed"
                         }
                       >
-                        <CheckCircle2 size={12} /> {item.completed_by}
+                        <CheckCircle2 size={12} className="shrink-0" />
+
+                        {/* THE FIX: Use a grid to stack them perfectly on top of each other */}
+                        <div className="grid [grid-template-areas:'stack'] justify-items-start">
+                          {/* Name: Fades OUT on hover */}
+                          <span className="[grid-area:stack] transition-opacity duration-200 opacity-100 group-hover/timebtn:opacity-0 truncate max-w-[100px]">
+                            {item.completed_by}
+                          </span>
+
+                          {/* Time: Fades IN on hover */}
+                          {item.completion_time && (
+                            <span className="[grid-area:stack] transition-opacity duration-200 opacity-0 group-hover/timebtn:opacity-100 font-mono text-[11px]">
+                              {format(
+                                toZonedTime(
+                                  parseISO(item.completion_time),
+                                  timeZone,
+                                ),
+                                "HH:mm",
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ) : (
                       item.status !== "Cancelled" && (
@@ -2123,11 +2150,11 @@ const Dashboard = ({ session }) => {
           onClose={() => setIsProviderManagerOpen(false)}
         />
 
-        <ArchiveManagerModal 
-        isOpen={isArchiveModalOpen} 
-        onClose={() => setIsArchiveModalOpen(false)} 
-        userProfile={userProfile}
-    />
+        <ArchiveManagerModal
+          isOpen={isArchiveModalOpen}
+          onClose={() => setIsArchiveModalOpen(false)}
+          userProfile={userProfile}
+        />
       </div>
     </LocalizationProvider>
   );

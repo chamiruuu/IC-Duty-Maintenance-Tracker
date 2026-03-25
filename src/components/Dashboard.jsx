@@ -794,7 +794,7 @@ const Dashboard = ({ session }) => {
 
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'http://localhost:5173/reset-password', // Update this domain for production!
+      redirectTo: 'https://ic-duty-maintenance-tracker.vercel.app/reset-password',
     });
     setLoading(false);
 

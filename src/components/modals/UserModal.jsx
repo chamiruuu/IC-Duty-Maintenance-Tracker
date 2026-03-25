@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Users, X, UserPlus, Loader2, Shuffle, Check, UserMinus, Copy, Eye, EyeOff, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { Users, X, UserPlus, Loader2, Shuffle, Check, UserMinus, Copy, Eye, EyeOff, AlertCircle, AlertTriangle, Trash2, Key } from 'lucide-react';
 import CopyButton from '../CopyButton';
 
 const UserModal = ({
   isOpen, onClose, userTab, setUserTab, userList, userForm, setUserForm,
   loading, handleCreateUser, handleUpdateUser, handleDeleteUser,
-  editingUser, setEditingUser, newUserCredentials, setNewUserCredentials
+  editingUser, setEditingUser, newUserCredentials, setNewUserCredentials,
+  handleSendResetLink // <-- ADD IT HERE
 }) => {
   
   const [generatedPass, setGeneratedPass] = useState("");
@@ -240,6 +241,16 @@ const UserModal = ({
                                 <button onClick={() => setEditingUser(editingUser === u.id ? null : u.id)} className="text-xs font-medium text-blue-600 hover:text-blue-800">
                                    {editingUser === u.id ? 'Done' : 'Edit'}
                                 </button>
+
+                                {/* NEW: Send Password Reset Link Button */}
+                                <button 
+                                  onClick={() => handleSendResetLink(u.email)} 
+                                  className="text-gray-400 hover:text-indigo-600 transition-colors"
+                                  title="Send Password Reset Email"
+                                >
+                                   <Key size={14} />
+                                </button>
+
                                 <button 
                                   onClick={() => setDeleteConfirmation(u)} 
                                   className="text-gray-300 hover:text-red-600 transition-colors"

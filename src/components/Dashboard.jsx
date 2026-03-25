@@ -789,6 +789,22 @@ const Dashboard = ({ session }) => {
     }
   };
 
+  const handleSendResetLink = async (email) => {
+    if (!window.confirm(`Are you sure you want to send a password reset link to ${email}?`)) return;
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'http://localhost:5173/reset-password', // Update this domain for production!
+    });
+    setLoading(false);
+
+    if (error) {
+      triggerNotification("Error", `Failed to send link: ${error.message}`, "error");
+    } else {
+      triggerNotification("Success", `Password reset link sent to ${email}`, "success");
+    }
+  };
+
   const fetchMaintenances = async () => {
     const { data, error } = await supabase
       .from("maintenances")
@@ -2071,6 +2087,7 @@ const Dashboard = ({ session }) => {
           setEditingUser={setEditingUser}
           newUserCredentials={newUserCredentials}
           setNewUserCredentials={setNewUserCredentials}
+          handleSendResetLink={handleSendResetLink} // <-- ADD THIS NEW PROP
           generatePassword={() => {
             const chars =
               "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";

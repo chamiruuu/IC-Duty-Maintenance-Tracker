@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabaseClient';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
+import ResetPassword from "./pages/ResetPassword"; // <-- Ensure this file exists!
 
 function App() {
   const [session, setSession] = useState(null);
@@ -32,15 +34,32 @@ function App() {
     );
   }
 
-  // If no session, show Login. If session exists, show Dashboard.
   return (
-    <>
-      {!session ? (
-        <Login onLogin={setSession} />
-      ) : (
-        <Dashboard key={session.user.id} session={session} />
-      )}
-    </>
+    <BrowserRouter>
+      <Routes>
+        {/* Public Routes */}
+        <Route 
+          path="/login" 
+          element={!session ? <Login onLogin={setSession} /> : <Navigate to="/dashboard" />} 
+        />
+        <Route 
+          path="/reset-password" 
+          element={<ResetPassword />} 
+        />
+
+        {/* Protected Route */}
+        <Route 
+          path="/dashboard" 
+          element={session ? <Dashboard key={session.user.id} session={session} /> : <Navigate to="/login" />} 
+        />
+
+        {/* Fallback Route (Catches anything else) */}
+        <Route 
+          path="*" 
+          element={<Navigate to={session ? "/dashboard" : "/login"} />} 
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

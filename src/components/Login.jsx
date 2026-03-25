@@ -1,124 +1,104 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { Lock, Mail, ArrowRight, Loader2 } from 'lucide-react';
 
-export default function Login({ onLogin }) {
+const Login = ({ onLogin }) => {
+  const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  
-  // 1. Add a state to toggle the "Forgot Password" view
-  const [isResetMode, setIsResetMode] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Standard Login Function
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    
-    if (error) {
-      alert(error.message);
-    } else {
-      onLogin(data.session);
-    }
-    setLoading(false);
-  };
+    setError(null);
 
-  // 2. THIS IS WHERE YOUR NEW CODE GOES
-  const handleForgotPassword = async (e) => {
-    e.preventDefault();
-    
-    if (!email) {
-      alert("Please enter your email address first.");
-      return;
-    }
-
-    setLoading(true);
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      // NOTE: Update this port to match your local Vite server (usually 5173)
-      redirectTo: 'http://localhost:5173/reset-password', 
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
 
     if (error) {
-      alert("Error: " + error.message);
+      setError(error.message);
+      setLoading(false);
     } else {
-      alert("Password reset link sent! Please check your email inbox.");
-      setIsResetMode(false); // Go back to login screen
+      // Successful login
+      onLogin(data.session);
     }
-    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
         
-        <h2 className="text-2xl font-bold text-center mb-6">
-          {isResetMode ? 'Reset Password' : 'Login to System'}
-        </h2>
+        {/* Header */}
+        <div className="p-8 border-b border-gray-100 bg-white text-center">
+          <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg shadow-gray-200">
+            <span className="text-white font-bold text-sm">IC</span>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 tracking-tight">Maintenance Control</h2>
+          <p className="text-xs text-gray-500 mt-2 font-medium uppercase tracking-wider">Authorized Personnel Only</p>
+        </div>
 
-        {/* 3. Render either the Reset Form OR the Login Form */}
-        {isResetMode ? (
-          <form onSubmit={handleForgotPassword} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email Address</label>
-              <input
-                type="email"
+        {/* Form */}
+        <form onSubmit={handleLogin} className="p-8 space-y-5">
+          
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 text-xs font-medium px-4 py-3 rounded flex items-center gap-2">
+              <div className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse"></div>
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Email Address</label>
+            <div className="relative">
+              <Mail size={16} className="absolute left-3 top-3 text-gray-400" />
+              <input 
+                type="email" 
                 required
-                className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-md pl-10 pr-3 py-2.5 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+                placeholder="user@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 font-bold"
-            >
-              {loading ? 'Sending...' : 'Send Reset Link'}
-            </button>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setIsResetMode(false)}
-              className="w-full text-sm text-gray-500 hover:text-gray-800 text-center mt-2"
-            >
-              Back to Login
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email Address</label>
-              <input
-                type="email"
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Password</label>
+            <div className="relative">
+              <Lock size={16} className="absolute left-3 top-3 text-gray-400" />
+              <input 
+                type="password" 
                 required
-                className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
-              <input
-                type="password"
-                required
-                className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-md pl-10 pr-3 py-2.5 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+          </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 font-bold"
-            >
-              {loading ? 'Logging in...' : 'Login'}
-            </button>
-          </form>
-        )}
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-black hover:bg-gray-800 text-white font-bold text-sm py-3 rounded-md transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <>Sign In <ArrowRight size={16} /></>}
+          </button>
+        </form>
+
+        {/* Footer */}
+        <div className="bg-gray-50 p-4 text-center border-t border-gray-100">
+          <p className="text-[10px] text-gray-400 font-medium">
+            Protected System • IP Logs Active
+          </p>
+        </div>
+
       </div>
     </div>
   );
-}
+};
+
+export default Login;

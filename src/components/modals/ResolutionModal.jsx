@@ -10,6 +10,8 @@ import {
   Check,
   Lock,
   ExternalLink,
+  Users,
+  MessageSquare,
 } from "lucide-react";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -42,12 +44,19 @@ const ResolutionModal = ({
   const minutesRemaining = endTime.diff(now, "minute");
   const isLateExtension = minutesRemaining <= 5;
 
+  const isBoWebSop = item
+    ? ["BO", "WEB", "BO/WEB"].includes(item.provider)
+    : false;
+  const reportBackMsg =
+    "Hi Team, please be informed that the merchants have been informed through the SKYPEBOT. Thank You ~!!";
+
   const [checklist, setChecklist] = useState({
     manualClose: false,
     boUpdate: false,
     notifyMerchant: false,
     internalNotify: false,
     redmineUpdate: false,
+    reportBack: false,
   });
 
   const hasStarted = () => {
@@ -67,6 +76,7 @@ const ResolutionModal = ({
         notifyMerchant: false,
         internalNotify: false,
         redmineUpdate: false,
+        reportBack: false,
       });
     }
   }, [isOpen, item, initialMode]);
@@ -74,21 +84,45 @@ const ResolutionModal = ({
   if (!isOpen || !item) return null;
 
   // --- VALIDATION ---
-  const isSopComplete =
-    (!isLateExtension || checklist.manualClose) &&
-    checklist.boUpdate &&
-    checklist.internalNotify &&
-    checklist.notifyMerchant &&
-    checklist.redmineUpdate;
+  let requiredKeys = [];
+  if (isBoWebSop) {
+    requiredKeys = [
+      "internalNotify",
+      "notifyMerchant",
+      "reportBack",
+      "redmineUpdate",
+    ];
+  } else {
+    requiredKeys = [
+      "boUpdate",
+      "internalNotify",
+      "notifyMerchant",
+      "redmineUpdate",
+    ];
+  }
+  if (isLateExtension) requiredKeys.push("manualClose");
+
+  const isSopComplete = requiredKeys.every((key) => checklist[key]);
 
   const getManualCloseMsg = () => {
     return `Maintenance for ${item.provider} has been extended. Please help to close the game, Thank You.`;
   };
 
-  const getInternalGroupMsg = () =>
-    `${item.provider} maintenance time extended. BO8.2 announcement has been updated.`;
+  const getBoWebExtensionMsg = () => {
+    if (extensionType === "notice") {
+      return `Hello there\nPlease be informed that 【${item.provider}】will extend the maintenance until further notice\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+    }
+    const timeStr = newEndTime?.format("YYYY-MM-DD HH:mm");
+    return `Hello there\nPlease be informed that 【${item.provider}】will extend the maintenance until ${timeStr}(GMT+8).\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+  };
+
+  const getInternalGroupMsg = () => {
+    if (isBoWebSop) return getBoWebExtensionMsg();
+    return `${item.provider} maintenance time extended. BO8.2 announcement has been updated.`;
+  };
 
   const getAnnouncementBody = () => {
+    if (isBoWebSop) return getBoWebExtensionMsg();
     if (extensionType === "notice") {
       return `Hello there\nPlease be informed that 【${item.provider}】 will extend the maintenance until further notice.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     }
@@ -371,45 +405,97 @@ const ResolutionModal = ({
                         <Lock size={16} />,
                         true,
                       )}
-                    {renderStep(
-                      "boUpdate",
-                      "1",
+
+                    {isBoWebSop ? (
                       <>
-                        Update <strong>BO8.2</strong> Announcement.
-                        <br />
-                        {extensionType === "notice"
-                          ? 'Check "Until Further Notice".'
-                          : 'Update the "Start Content".'}
-                      </>,
-                    )}
-                    {renderStep(
-                      "internalNotify",
-                      "2",
+                        {renderStep(
+                          "internalNotify",
+                          "1",
+                          <>
+                            Send message to <strong>IP Internal Group</strong>.
+                            <br />
+                            (Use copy text on right)
+                          </>,
+                          <Send size={16} />,
+                          false,
+                          getInternalGroupMsg(),
+                        )}
+                        {renderStep(
+                          "notifyMerchant",
+                          "2",
+                          <>
+                            Notify Merchant via Robot's BO Select:
+                            <br />
+                            <strong>
+                              【IC-Main Group Announcement(No Stag)】
+                            </strong>
+                          </>,
+                          <Users size={16} />,
+                        )}
+                        {renderStep(
+                          "reportBack",
+                          "3",
+                          <>
+                            Report back to <strong>IP Internal Group</strong>{" "}
+                            once task is completed.
+                          </>,
+                          <MessageSquare size={16} />,
+                          false,
+                          reportBackMsg,
+                        )}
+                        {renderStep(
+                          "redmineUpdate",
+                          "4",
+                          <>
+                            Update <strong>Redmine</strong>.
+                          </>,
+                        )}
+                      </>
+                    ) : (
                       <>
-                        Notify <strong>IP Internal Group</strong>.<br />
-                        (Use copy text on right)
-                      </>,
-                    )}
-                    {renderStep(
-                      "notifyMerchant",
-                      "3",
-                      <>
-                        Notify Merchant via Robot's BO Select:
-                        <br />
-                        <strong>【IC-Maintenance&Promo of providers】</strong>
-                      </>,
-                    )}
-                    {renderStep(
-                      "redmineUpdate",
-                      "4",
-                      <>
-                        Update <strong>Redmine & Sync BO8.7</strong>.
-                      </>,
+                        {renderStep(
+                          "boUpdate",
+                          "1",
+                          <>
+                            Update <strong>BO8.2</strong> Announcement.
+                            <br />
+                            {extensionType === "notice"
+                              ? 'Check "Until Further Notice".'
+                              : 'Update the "Start Content".'}
+                          </>,
+                        )}
+                        {renderStep(
+                          "internalNotify",
+                          "2",
+                          <>
+                            Notify <strong>IP Internal Group</strong>.<br />
+                            (Use copy text on right)
+                          </>,
+                        )}
+                        {renderStep(
+                          "notifyMerchant",
+                          "3",
+                          <>
+                            Notify Merchant via Robot's BO Select:
+                            <br />
+                            <strong>
+                              【IC-Maintenance&Promo of providers】
+                            </strong>
+                          </>,
+                        )}
+                        {renderStep(
+                          "redmineUpdate",
+                          "4",
+                          <>
+                            Update <strong>Redmine & Sync BO8.7</strong>.
+                          </>,
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
 
-                {/* RIGHT: MESSAGES (Updated Layout) */}
+                {/* RIGHT: MESSAGES */}
                 <div className="space-y-3 flex flex-col h-full">
                   <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2">
                     <Send size={14} /> Messages to Copy
@@ -441,6 +527,21 @@ const ResolutionModal = ({
                       <CopyButton text={getInternalGroupMsg()} />
                     </div>
                   </div>
+
+                  {/* REPORT BACK MSG FOR BO/WEB */}
+                  {isBoWebSop && (
+                    <div className="space-y-1 shrink-0">
+                      <label className="text-[10px] font-bold text-gray-400">
+                        REPORT BACK MSG
+                      </label>
+                      <div className="flex gap-2">
+                        <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">
+                          {reportBackMsg}
+                        </div>
+                        <CopyButton text={reportBackMsg} />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Expanded Announcement Section */}
                   <div className="space-y-1 flex-1 flex flex-col min-h-0">

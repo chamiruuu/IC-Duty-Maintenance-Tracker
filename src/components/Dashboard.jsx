@@ -379,6 +379,13 @@ const Dashboard = ({ session }) => {
 
         // 2. "UNTIL FURTHER NOTICE" LOGIC (Shift Boundary System)
         if (m.is_until_further_notice) {
+
+          // --- NEW LOGIC: Skip shift reminders if it's "Part of the Game" ---
+          if (m.type && m.type.includes('Part of the Game')) {
+              return; 
+          }
+          // -----------------------------------------------------------------
+
           const SHANGHAI_TZ = "Asia/Shanghai";
           const nowZoned = toZonedTime(now, SHANGHAI_TZ);
           const currentH = parseInt(

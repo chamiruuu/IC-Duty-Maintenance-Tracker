@@ -57,6 +57,12 @@ const EntryModal = ({
     step4: false,
     step5: false,
   });
+  const [urgentBoWebChecks, setUrgentBoWebChecks] = useState({
+    step1: false,
+    step2: false,
+    step3: false,
+    step4: false,
+  });
 
   const [urgentScript, setUrgentScript] = useState({
     title: "",
@@ -123,14 +129,21 @@ const EntryModal = ({
 
   const isUrgentLocked =
     isUrgent &&
+    !isBoWebSop &&
     (!urgentChecks.contact ||
       !urgentChecks.bo82 ||
       !urgentChecks.merchant ||
       !urgentChecks.redmine);
   const isBoWebLocked =
     isBoWebSop &&
+    !isUrgent &&
     !isCancelled &&
     Object.values(boWebChecks).some((checked) => !checked);
+  const isUrgentBoWebLocked =
+    isUrgent &&
+    isBoWebSop &&
+    !isCancelled &&
+    Object.values(urgentBoWebChecks).some((checked) => !checked);
 
   useEffect(() => {
     if (isUrgent) {
@@ -149,7 +162,6 @@ const EntryModal = ({
       setRescheduleChecklist({ internal: false, boSync: false });
       setUrgentChecks({ internal: false, bo82: false, redmine: false });
 
-      // --- NEW: Auto-check BO/WEB steps if editing, otherwise blank ---
       const isEdit = !!editingId;
       setBoWebChecks({
         step1: isEdit,
@@ -157,6 +169,12 @@ const EntryModal = ({
         step3: isEdit,
         step4: isEdit,
         step5: isEdit,
+      });
+      setUrgentBoWebChecks({
+        step1: isEdit,
+        step2: isEdit,
+        step3: isEdit,
+        step4: isEdit,
       });
 
       const typeStr = formData.type || "Scheduled";
@@ -178,7 +196,7 @@ const EntryModal = ({
     }
   }, [isOpen, editingId]);
 
-  // --- MODIFIED: Time Change Tracking Hook ---
+  // Time Change Tracking Hook
   useEffect(() => {
     if (editingId && initialTimes.start) {
       const fmt = "YYYY-MM-DD HH:mm";
@@ -198,7 +216,6 @@ const EntryModal = ({
 
         if (isTimeChanged && isFuture) {
           if (isBoWebSop) {
-            // Hide 2-step SOP and uncheck all 5 BO/WEB steps
             setShowRescheduleSop(false);
             setBoWebChecks({
               step1: false,
@@ -207,12 +224,16 @@ const EntryModal = ({
               step4: false,
               step5: false,
             });
+            setUrgentBoWebChecks({
+              step1: false,
+              step2: false,
+              step3: false,
+              step4: false,
+            });
           } else {
-            // Normal provider: show the 2-step reschedule SOP
             setShowRescheduleSop(true);
           }
         } else {
-          // Reverted back to original time (or past)
           setShowRescheduleSop(false);
           if (isBoWebSop) {
             setBoWebChecks({
@@ -221,6 +242,12 @@ const EntryModal = ({
               step3: true,
               step4: true,
               step5: true,
+            });
+            setUrgentBoWebChecks({
+              step1: true,
+              step2: true,
+              step3: true,
+              step4: true,
             });
           }
         }
@@ -298,7 +325,12 @@ const EntryModal = ({
       (!rescheduleChecklist.internal || !rescheduleChecklist.boSync)
     )
       return;
-    if (isUrgentLocked || isBoWebLocked) return;
+    if (
+      isUrgentLocked ||
+      (isBoWebSop && !isUrgent && isBoWebLocked) ||
+      (isBoWebSop && isUrgent && isUrgentBoWebLocked)
+    )
+      return;
 
     const newErrors = {};
     let hasError = false;
@@ -464,6 +496,35 @@ const EntryModal = ({
     return { scriptMsg, reportBack, title };
   };
 
+  const getUrgentBoWebScripts = () => {
+    const target = formData.provider;
+    const isUFN = formData.isUntilFurtherNotice;
+    const dStart = formData.startTime
+      ? formData.startTime.format("YYYY-MM-DD")
+      : "";
+    const tStart = formData.startTime ? formData.startTime.format("HH:mm") : "";
+    const tEnd = formData.endTime ? formData.endTime.format("HH:mm") : "??:??";
+    const targetDesc =
+      target === "BO" ? "BO" : target === "WEB" ? "Website" : "BO and Website";
+
+    let scriptMsg = "";
+    let title = "";
+
+    if (isUFN) {
+      title = `【${target}】【Urgent Maintenance】until further notice (from ${dStart} ${tStart})`;
+      scriptMsg = `Hello there\nPlease be informed that【${target}】 is going urgent maintenance until further notice,the ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+    } else {
+      title = `【${target}】【Urgent Maintenance】on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
+      scriptMsg = `Hello there\nPlease be informed that【${target}】 is going urgent maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8) ,the ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+    }
+    return {
+      scriptMsg,
+      title,
+      reportBack:
+        "Hi Team, please be informed that the merchants have been informed through the SKYPEBOT. Thank You ~!!",
+    };
+  };
+
   const internalUpdateMsg = `Maintenance time update for ${formData.provider}, BO8.2 announcement has been updated.`;
   const urgentInternalMsg = isPartGame
     ? `Urgent Maintenance: ${formData.provider || "Provider"} - Part of the Game (Lobby Remains Open).`
@@ -486,12 +547,21 @@ const EntryModal = ({
     return { text: "Please use text format only.", link: null };
   };
   const providerHint = getProviderHint();
-  const boWebData = isBoWebSop ? getBoWebScripts() : null;
+
+  const boWebData = isBoWebSop && !isUrgent ? getBoWebScripts() : null;
+  const urgentBoWebData =
+    isBoWebSop && isUrgent ? getUrgentBoWebScripts() : null;
 
   const getStepClass = (isChecked) =>
     `rounded-lg p-4 relative cursor-pointer transition-all duration-300 border-2 ${isChecked ? "bg-emerald-50 border-emerald-400 shadow-md" : "bg-white border-blue-100 hover:border-blue-300 shadow-sm"}`;
   const getBadgeClass = (isChecked) =>
     `absolute top-0 left-0 text-[10px] font-bold px-2 py-0.5 rounded-br-lg rounded-tl-sm transition-colors flex items-center gap-1 ${isChecked ? "bg-emerald-500 text-white" : "bg-blue-100 text-blue-800"}`;
+
+  // Special urgent styling for BO/WEB
+  const getUrgentStepClass = (isChecked) =>
+    `rounded-lg p-4 relative cursor-pointer transition-all duration-300 border-2 ${isChecked ? "bg-red-50 border-red-400 shadow-md" : "bg-white border-red-100 hover:border-red-300 shadow-sm"}`;
+  const getUrgentBadgeClass = (isChecked) =>
+    `absolute top-0 left-0 text-[10px] font-bold px-2 py-0.5 rounded-br-lg rounded-tl-sm transition-colors flex items-center gap-1 ${isChecked ? "bg-red-500 text-white" : "bg-red-100 text-red-800"}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
@@ -591,8 +661,12 @@ const EntryModal = ({
 
             {/* SUB-SELECTION FOR BO/WEB */}
             {isBoWebSop && (
-              <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-md animate-in fade-in slide-in-from-top-2">
-                <label className="block text-[10px] font-bold text-blue-800 mb-2 uppercase tracking-wider">
+              <div
+                className={`p-3 border rounded-md animate-in fade-in slide-in-from-top-2 ${isUrgent ? "bg-red-50/50 border-red-100" : "bg-blue-50/50 border-blue-100"}`}
+              >
+                <label
+                  className={`block text-[10px] font-bold mb-2 uppercase tracking-wider ${isUrgent ? "text-red-800" : "text-blue-800"}`}
+                >
                   Select Target System
                 </label>
                 <div className="flex gap-4">
@@ -608,9 +682,11 @@ const EntryModal = ({
                         onChange={(e) =>
                           setFormData({ ...formData, provider: e.target.value })
                         }
-                        className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        className={`w-3.5 h-3.5 focus:ring-opacity-50 border-gray-300 ${isUrgent ? "text-red-600 focus:ring-red-500" : "text-blue-600 focus:ring-blue-500"}`}
                       />
-                      <span className="text-xs font-semibold text-blue-900">
+                      <span
+                        className={`text-xs font-semibold ${isUrgent ? "text-red-900" : "text-blue-900"}`}
+                      >
                         {sys === "BO/WEB" ? "BOTH (BO/WEB)" : sys}
                       </span>
                     </label>
@@ -931,8 +1007,206 @@ const EntryModal = ({
           <div
             className={`w-1/2 p-6 flex flex-col overflow-y-auto ${isUrgent ? "bg-red-50" : isBoWebSop && !isCancelled ? "bg-[#f4f7fc]" : "bg-gray-50"}`}
           >
-            {isUrgent ? (
-              // --- URGENT LAYOUT ---
+            {isUrgent && isBoWebSop ? (
+              // --- NEW: URGENT BO/WEB SOP LAYOUT ---
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-red-200">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-red-100 p-1.5 rounded text-red-600">
+                      <AlertCircle size={16} />
+                    </div>
+                    <h3 className="text-xs font-bold text-red-900 uppercase tracking-widest">
+                      Urgent {formData.provider} SOP
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {editingId && wasTimeChanged && isUrgentBoWebLocked ? (
+                      <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded flex items-center gap-1 animate-pulse">
+                        <AlertCircle size={12} /> Time Changed: Verify steps
+                      </span>
+                    ) : isUrgentBoWebLocked ? (
+                      <span className="text-[10px] font-bold text-gray-400 bg-gray-200 px-2 py-1 rounded">
+                        Complete steps
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded flex items-center gap-1">
+                        <Check size={12} /> Ready
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Step 1 */}
+                <div
+                  onClick={() =>
+                    setUrgentBoWebChecks((prev) => ({
+                      ...prev,
+                      step1: !prev.step1,
+                    }))
+                  }
+                  className={getUrgentStepClass(urgentBoWebChecks.step1)}
+                >
+                  <div className={getUrgentBadgeClass(urgentBoWebChecks.step1)}>
+                    {urgentBoWebChecks.step1 ? (
+                      <>
+                        <Check size={10} strokeWidth={4} /> DONE
+                      </>
+                    ) : (
+                      "STEP 1"
+                    )}
+                  </div>
+                  <p
+                    className={`text-xs font-semibold mt-2 mb-2 transition-colors ${urgentBoWebChecks.step1 ? "text-emerald-900" : "text-gray-700"}`}
+                  >
+                    Send msg to internal group:
+                  </p>
+                  <div
+                    className="flex gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-[10px] font-mono text-gray-600 whitespace-pre-wrap select-all">
+                      {urgentBoWebData.scriptMsg || (
+                        <span className="text-gray-300 italic">
+                          Select time first...
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0">
+                      <CopyButton text={urgentBoWebData.scriptMsg} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div
+                  onClick={() =>
+                    setUrgentBoWebChecks((prev) => ({
+                      ...prev,
+                      step2: !prev.step2,
+                    }))
+                  }
+                  className={getUrgentStepClass(urgentBoWebChecks.step2)}
+                >
+                  <div className={getUrgentBadgeClass(urgentBoWebChecks.step2)}>
+                    {urgentBoWebChecks.step2 ? (
+                      <>
+                        <Check size={10} strokeWidth={4} /> DONE
+                      </>
+                    ) : (
+                      "STEP 2"
+                    )}
+                  </div>
+                  <p
+                    className={`text-xs font-semibold mt-2 transition-colors ${urgentBoWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
+                  >
+                    Notify merchants via robot BO:{" "}
+                    <span className="font-bold text-red-700">
+                      [IC-Main Announcement(No Stag)]
+                    </span>
+                  </p>
+                </div>
+
+                {/* Step 3 */}
+                <div
+                  onClick={() =>
+                    setUrgentBoWebChecks((prev) => ({
+                      ...prev,
+                      step3: !prev.step3,
+                    }))
+                  }
+                  className={getUrgentStepClass(urgentBoWebChecks.step3)}
+                >
+                  <div className={getUrgentBadgeClass(urgentBoWebChecks.step3)}>
+                    {urgentBoWebChecks.step3 ? (
+                      <>
+                        <Check size={10} strokeWidth={4} /> DONE
+                      </>
+                    ) : (
+                      "STEP 3"
+                    )}
+                  </div>
+                  <p
+                    className={`text-xs font-semibold mt-2 mb-2 transition-colors ${urgentBoWebChecks.step3 ? "text-emerald-900" : "text-gray-700"}`}
+                  >
+                    Report back to IP Internal Group:
+                  </p>
+                  <div
+                    className="flex gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-[10px] font-mono text-gray-600 select-all">
+                      {urgentBoWebData.reportBack}
+                    </div>
+                    <div className="flex-shrink-0">
+                      <CopyButton text={urgentBoWebData.reportBack} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 4 */}
+                <div
+                  onClick={() =>
+                    setUrgentBoWebChecks((prev) => ({
+                      ...prev,
+                      step4: !prev.step4,
+                    }))
+                  }
+                  className={getUrgentStepClass(urgentBoWebChecks.step4)}
+                >
+                  <div className={getUrgentBadgeClass(urgentBoWebChecks.step4)}>
+                    {urgentBoWebChecks.step4 ? (
+                      <>
+                        <Check size={10} strokeWidth={4} /> DONE
+                      </>
+                    ) : (
+                      "STEP 4"
+                    )}
+                  </div>
+                  <p
+                    className={`text-xs font-semibold mt-2 mb-3 transition-colors ${urgentBoWebChecks.step4 ? "text-emerald-900" : "text-gray-700"}`}
+                  >
+                    Redmine creation:
+                  </p>
+
+                  <div
+                    className="space-y-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div>
+                      <div className="flex justify-between items-end mb-1">
+                        <label className="text-[10px] font-bold text-gray-400">
+                          TITLE
+                        </label>
+                        <CopyButton text={urgentBoWebData.title} />
+                      </div>
+                      <div className="bg-gray-50 border border-gray-200 rounded p-2 text-[10px] font-mono text-gray-800 break-words">
+                        {urgentBoWebData.title || (
+                          <span className="text-gray-300 italic">
+                            Waiting...
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-end mb-1">
+                        <label className="text-[10px] font-bold text-gray-400">
+                          START CONTENT
+                        </label>
+                        <CopyButton text={urgentBoWebData.scriptMsg} />
+                      </div>
+                      <div className="bg-gray-50 border border-gray-200 rounded p-2 text-[10px] font-mono text-gray-800 whitespace-pre-wrap">
+                        {urgentBoWebData.scriptMsg || (
+                          <span className="text-gray-300 italic">
+                            Waiting...
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : isUrgent ? (
+              // --- STANDARD URGENT LAYOUT ---
               <div className="space-y-6">
                 <div className="flex items-center gap-2 pb-2 border-b border-red-200">
                   <div className="bg-red-100 p-1.5 rounded text-red-600">
@@ -1145,7 +1419,7 @@ const EntryModal = ({
                 </div>
               </div>
             ) : isBoWebSop && !isCancelled ? (
-              // --- BO/WEB SOP LAYOUT ---
+              // --- SCHEDULED BO/WEB SOP LAYOUT ---
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-blue-200">
                   <div className="flex items-center gap-2">
@@ -1159,8 +1433,7 @@ const EntryModal = ({
                   <div className="flex items-center gap-2">
                     {editingId && wasTimeChanged && isBoWebLocked ? (
                       <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded flex items-center gap-1 animate-pulse">
-                        <AlertCircle size={12} /> Time Changed: Please verify
-                        steps again
+                        <AlertCircle size={12} /> Time Changed: Verify steps
                       </span>
                     ) : isBoWebLocked ? (
                       <span className="text-[10px] font-bold text-gray-400 bg-gray-200 px-2 py-1 rounded">
@@ -1416,7 +1689,8 @@ const EntryModal = ({
                 (!rescheduleChecklist.internal ||
                   !rescheduleChecklist.boSync)) ||
               isUrgentLocked ||
-              isBoWebLocked
+              (isBoWebSop && !isUrgent && !isCancelled && isBoWebLocked) ||
+              (isBoWebSop && isUrgent && !isCancelled && isUrgentBoWebLocked)
             }
             className={`px-4 py-2 text-xs font-bold text-white rounded-sm shadow-sm transition-colors flex items-center gap-2 ${
               loading ||
@@ -1424,7 +1698,8 @@ const EntryModal = ({
                 (!rescheduleChecklist.internal ||
                   !rescheduleChecklist.boSync)) ||
               isUrgentLocked ||
-              isBoWebLocked
+              (isBoWebSop && !isUrgent && isBoWebLocked) ||
+              (isBoWebSop && isUrgent && isUrgentBoWebLocked)
                 ? "bg-gray-300 cursor-not-allowed"
                 : isUrgent
                   ? "bg-red-600 hover:bg-red-700"

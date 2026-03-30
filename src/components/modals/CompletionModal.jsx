@@ -125,7 +125,7 @@ const CompletionModal = ({
     return `maintenance for ${item.provider}, ${reason}. Please help to open. Thank You.`;
   };
 
-  // --- SCRIPT TO ASK LEADER ---
+  // SCRIPT TO ASK LEADER
   const getLeaderConfirmScript = () => {
     return `Hi Team, may we confirm as the maintenance for 【${item.provider}】has been completed, do we need to inform merchant's using the SKYPEBOT or not ? Thank You ~!!`;
   };
@@ -196,24 +196,29 @@ const CompletionModal = ({
   // --- VALIDATION LOGIC ---
   let canConfirm = false;
   if (isBoWebSop) {
-    if (isEarly) {
+    const requiredChecks = isUrgent
+      ? ["internalGroup", "merchantNotify", "reportBack", "redmineUpdate"]
+      : [
+          "internalGroup",
+          "merchantNotify",
+          "reportBack",
+          "boUpdate",
+          "redmineUpdate",
+        ];
+
+    const noLeaderChecks = isUrgent
+      ? ["redmineUpdate"]
+      : ["boUpdate", "redmineUpdate"];
+
+    // If it's Urgent, we don't care if it's early or not, we MUST do the full checklist without asking leader
+    if (isEarly && !isUrgent) {
       if (leaderApproved === "yes") {
-        canConfirm =
-          sopChecks.internalGroup &&
-          sopChecks.merchantNotify &&
-          sopChecks.reportBack &&
-          sopChecks.boUpdate &&
-          sopChecks.redmineUpdate;
+        canConfirm = requiredChecks.every((k) => sopChecks[k]);
       } else if (leaderApproved === "no") {
-        canConfirm = sopChecks.boUpdate && sopChecks.redmineUpdate;
+        canConfirm = noLeaderChecks.every((k) => sopChecks[k]);
       }
     } else {
-      canConfirm =
-        sopChecks.internalGroup &&
-        sopChecks.merchantNotify &&
-        sopChecks.reportBack &&
-        sopChecks.boUpdate &&
-        sopChecks.redmineUpdate;
+      canConfirm = requiredChecks.every((k) => sopChecks[k]);
     }
   } else {
     if (isEarly) {
@@ -330,14 +335,16 @@ const CompletionModal = ({
             <h5
               className={`text-xs font-bold uppercase ${isEarly ? "text-orange-700" : "text-gray-900"}`}
             >
-              {isEarly ? "Manual Intervention Required (SOP)" : "SOP Checklist"}
+              {isEarly && !isUrgent
+                ? "Manual Intervention Required (SOP)"
+                : "SOP Checklist"}
             </h5>
 
             {isBoWebSop ? (
               // --- BO/WEB CUSTOM CHECKLISTS ---
               <>
-                {isEarly && (
-                  // --- NEW: SLEEK LEADER CONFIRMATION DESIGN ---
+                {isEarly && !isUrgent && (
+                  // LEADER CONFIRMATION (ONLY SHOWN IF EARLY AND NOT URGENT)
                   <div className="mb-5 p-4 bg-white border border-gray-200 rounded-xl shadow-sm space-y-4 animate-in fade-in zoom-in-95">
                     <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                       <div className="flex items-center gap-2">
@@ -398,7 +405,8 @@ const CompletionModal = ({
                   </div>
                 )}
 
-                {(!isEarly || leaderApproved === "yes") && (
+                {/* FULL CHECKLIST (Shown if Not Early OR if Urgent OR if Leader said Yes) */}
+                {(!isEarly || isUrgent || leaderApproved === "yes") && (
                   <>
                     {renderCheckItem(
                       "internalGroup",
@@ -420,22 +428,24 @@ const CompletionModal = ({
                       <CheckSquare size={16} />,
                       reportBackMsg,
                     )}
-                    {renderCheckItem(
-                      "boUpdate",
-                      "4. Update BO8.2",
-                      "Update BO8.2 Finish Content",
-                      <FileText size={16} />,
-                    )}
+                    {!isUrgent &&
+                      renderCheckItem(
+                        "boUpdate",
+                        "4. Update BO8.2",
+                        "Update BO8.2 Finish Content",
+                        <FileText size={16} />,
+                      )}
                     {renderCheckItem(
                       "redmineUpdate",
-                      "5. Update Redmine",
+                      isUrgent ? "4. Update Redmine" : "5. Update Redmine",
                       "Update Redmine with finish content",
                       <Activity size={16} />,
                     )}
                   </>
                 )}
 
-                {isEarly && leaderApproved === "no" && (
+                {/* ABBREVIATED CHECKLIST (Shown ONLY if Early AND Not Urgent AND Leader said No) */}
+                {isEarly && !isUrgent && leaderApproved === "no" && (
                   <>
                     {renderCheckItem(
                       "boUpdate",

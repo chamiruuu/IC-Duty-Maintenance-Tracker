@@ -19,7 +19,13 @@ import { getChecklistForDate } from "../../lib/scheduleRules";
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
 
-const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
+const ScheduleModal = ({
+  isOpen,
+  onClose,
+  maintenances,
+  onOpenEntryModal,
+  isQC,
+}) => {
   if (!isOpen) return null;
 
   const today = new Date();
@@ -116,18 +122,19 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
                           <div className="flex flex-col gap-2 mb-2 bg-white p-2 rounded-lg border border-transparent hover:border-gray-100 transition-colors">
                             {/* Top Line: Provider Name + Link + Status Icon */}
                             <div className="flex items-center justify-between">
-                              
                               {/* Left Side: Name & Calendar Link */}
                               <div className="flex items-center gap-1.5">
-                                <span className={`text-sm font-semibold ${item.status === 'ok' ? 'text-gray-700' : 'text-gray-900'}`}>
+                                <span
+                                  className={`text-sm font-semibold ${item.status === "ok" ? "text-gray-700" : "text-gray-900"}`}
+                                >
                                   {item.provider}
                                 </span>
-                                
+
                                 {/* NEW: Minimalist Calendar Icon Link */}
                                 {item.statusLink && (
-                                  <a 
-                                    href={item.statusLink} 
-                                    target="_blank" 
+                                  <a
+                                    href={item.statusLink}
+                                    target="_blank"
                                     rel="noopener noreferrer"
                                     className="p-1 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
                                     title="Check Schedule Board"
@@ -136,11 +143,15 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
                                   </a>
                                 )}
                               </div>
-                              
+
                               {/* Right Side: Status Icon (Green Check / Red Pulse) */}
-                              {item.status === 'ok' ? (
+                              {item.status === "ok" ? (
                                 <div className="h-5 w-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                                  <Check size={12} className="text-emerald-600" strokeWidth={3} />
+                                  <Check
+                                    size={12}
+                                    className="text-emerald-600"
+                                    strokeWidth={3}
+                                  />
                                 </div>
                               ) : (
                                 <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0 mr-1.5"></div>
@@ -150,14 +161,20 @@ const ScheduleModal = ({ isOpen, onClose, maintenances, onOpenEntryModal }) => {
                             {/* Bottom Line: Action Button OR Redmine Link */}
                             <div>
                               {item.status === "missing" ? (
-                                <button
-                                  onClick={() =>
-                                    onOpenEntryModal(item.provider, date)
-                                  }
-                                  className="w-full py-1.5 flex items-center justify-center gap-1.5 rounded border border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-500 hover:text-gray-900 text-xs font-medium transition-all group-hover:border-solid mt-1"
-                                >
-                                  <Plus size={12} /> Create Entry
-                                </button>
+                                !isQC ? (
+                                  <button
+                                    onClick={() =>
+                                      onOpenEntryModal(item.provider, date)
+                                    }
+                                    className="w-full py-1.5 flex items-center justify-center gap-1.5 rounded border border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-500 hover:text-gray-900 text-xs font-medium transition-all group-hover:border-solid mt-1"
+                                  >
+                                    <Plus size={12} /> Create Entry
+                                  </button>
+                                ) : (
+                                  <span className="inline-block w-full text-center py-1.5 text-xs font-bold text-red-500 bg-red-50 rounded mt-1 select-none">
+                                    Missing Entry
+                                  </span>
+                                )
                               ) : (
                                 // CONFIRMED STATE
                                 <div className="flex items-center justify-between mt-1">

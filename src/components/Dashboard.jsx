@@ -2087,6 +2087,7 @@ const Dashboard = ({ session }) => {
           onClose={() => setIsScheduleModalOpen(false)}
           maintenances={maintenances}
           onOpenEntryModal={handleOpenNewEntry}
+          isQC={isQC}
         />
         {/* UPDATED: Pass providersDB to EntryModal */}
         <EntryModal

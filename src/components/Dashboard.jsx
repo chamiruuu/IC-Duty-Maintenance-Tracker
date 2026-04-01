@@ -103,7 +103,12 @@ const Dashboard = ({ session }) => {
     role: "normal",
     work_name: "",
   });
-  const isHighLevel = ["admin", "leader"].includes(userProfile.role);
+
+  // --- NEW ROLE LOGIC ---
+  const isQC = userProfile?.role === "qc";
+  const canManageAdmin = ["admin", "leader"].includes(userProfile?.role);
+  const isHighLevel = ["admin", "leader", "qc"].includes(userProfile?.role);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDate, setFilterDate] = useState(null); // null = All Dates
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
@@ -379,10 +384,9 @@ const Dashboard = ({ session }) => {
 
         // 2. "UNTIL FURTHER NOTICE" LOGIC (Shift Boundary System)
         if (m.is_until_further_notice) {
-
           // --- NEW LOGIC: Skip shift reminders if it's "Part of the Game" ---
-          if (m.type && m.type.includes('Part of the Game')) {
-              return; 
+          if (m.type && m.type.includes("Part of the Game")) {
+            return;
           }
           // -----------------------------------------------------------------
 
@@ -797,18 +801,32 @@ const Dashboard = ({ session }) => {
   };
 
   const handleSendResetLink = async (email) => {
-    if (!window.confirm(`Are you sure you want to send a password reset link to ${email}?`)) return;
+    if (
+      !window.confirm(
+        `Are you sure you want to send a password reset link to ${email}?`,
+      )
+    )
+      return;
 
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://ic-duty-maintenance-tracker.vercel.app/reset-password',
+      redirectTo:
+        "https://ic-duty-maintenance-tracker.vercel.app/reset-password",
     });
     setLoading(false);
 
     if (error) {
-      triggerNotification("Error", `Failed to send link: ${error.message}`, "error");
+      triggerNotification(
+        "Error",
+        `Failed to send link: ${error.message}`,
+        "error",
+      );
     } else {
-      triggerNotification("Success", `Password reset link sent to ${email}`, "success");
+      triggerNotification(
+        "Success",
+        `Password reset link sent to ${email}`,
+        "success",
+      );
     }
   };
 
@@ -826,7 +844,7 @@ const Dashboard = ({ session }) => {
   };
 
   const handleInitiateDelete = (item) => {
-    if (isHighLevel) {
+    if (canManageAdmin) {
       setDeletingId(item.id);
       setIsDeleteModalOpen(true);
     } else {
@@ -893,7 +911,7 @@ const Dashboard = ({ session }) => {
   };
   const handleInitiateCancel = (item) => {
     setCancellingItem(item);
-    if (isHighLevel) setIsCancellationModalOpen(true);
+    if (canManageAdmin) setIsCancellationModalOpen(true);
     else setIsCancelRequestModalOpen(true);
   };
   const handleRequestCancelConfirm = async (item) => {
@@ -933,7 +951,7 @@ const Dashboard = ({ session }) => {
   const initiateCompletion = (item) => {
     if (item.status === "Completed" || item.status === "Cancelled") {
       if (item.status === "Completed" && !item.bo_deleted) return;
-      if (isHighLevel) {
+      if (canManageAdmin) {
         setActionConfig({
           type: "OVERRIDE_PENDING",
           title: "Override Completion Status",
@@ -1007,7 +1025,7 @@ const Dashboard = ({ session }) => {
     });
   };
   const handleUndoCompletion = (item) => {
-    if (!isHighLevel) return;
+    if (!canManageAdmin) return;
     if (item.bo_deleted) {
       triggerNotification(
         "Warning",
@@ -1025,7 +1043,7 @@ const Dashboard = ({ session }) => {
     });
   };
   const handleUndoBOClean = (item) => {
-    if (!isHighLevel) return;
+    if (!canManageAdmin) return;
     setActionConfig({
       type: "UNDO_BO_CLEAN",
       title: "Undo BO 8.2 Cleanup",
@@ -1237,8 +1255,8 @@ const Dashboard = ({ session }) => {
     if (item.deletion_pending)
       return (
         <button
-          onClick={() => isHighLevel && handleInitiateDelete(item)}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 ${isHighLevel ? "animate-pulse cursor-pointer hover:bg-red-100" : "cursor-default"}`}
+          onClick={() => canManageAdmin && handleInitiateDelete(item)}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 ${canManageAdmin ? "animate-pulse cursor-pointer hover:bg-red-100" : "cursor-default"}`}
         >
           <Trash2 size={12} /> Pending Delete
         </button>
@@ -1252,8 +1270,8 @@ const Dashboard = ({ session }) => {
     if (item.cancellation_pending)
       return (
         <button
-          onClick={() => isHighLevel && handleInitiateCancel(item)}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200 ${isHighLevel ? "animate-pulse cursor-pointer hover:bg-orange-100" : "cursor-default"}`}
+          onClick={() => canManageAdmin && handleInitiateCancel(item)}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200 ${canManageAdmin ? "animate-pulse cursor-pointer hover:bg-orange-100" : "cursor-default"}`}
         >
           <AlertTriangle size={12} /> Pending Cancel
         </button>
@@ -1281,8 +1299,8 @@ const Dashboard = ({ session }) => {
     if (end && now > end)
       return (
         <button
-          onClick={() => handleOpenResolution(item)}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-pulse hover:bg-red-100 transition-colors"
+          onClick={() => !isQC && handleOpenResolution(item)}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-pulse ${!isQC ? "hover:bg-red-100 transition-colors" : "cursor-default"}`}
         >
           <AlertTriangle size={12} /> Action Required
         </button>
@@ -1656,12 +1674,15 @@ const Dashboard = ({ session }) => {
               >
                 <Calendar size={14} /> Schedule
               </button>
-              <button
-                onClick={() => handleOpenNewEntry()}
-                className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2"
-              >
-                <Plus size={14} /> New Entry
-              </button>
+
+              {!isQC && (
+                <button
+                  onClick={() => handleOpenNewEntry()}
+                  className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2"
+                >
+                  <Plus size={14} /> New Entry
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -1901,26 +1922,25 @@ const Dashboard = ({ session }) => {
                     {item.status === "Completed" ? (
                       <button
                         onClick={() => handleUndoCompletion(item)}
-                        disabled={!isHighLevel}
+                        disabled={!canManageAdmin}
                         className={`group/timebtn flex items-center gap-1.5 text-emerald-600 font-bold transition-all ${
-                          isHighLevel
+                          canManageAdmin
                             ? "hover:text-red-600 cursor-pointer"
                             : "cursor-default"
                         }`}
                         title={
-                          isHighLevel ? "Click to UNDO Completion" : "Completed"
+                          canManageAdmin
+                            ? "Click to UNDO Completion"
+                            : "Completed"
                         }
                       >
                         <CheckCircle2 size={12} className="shrink-0" />
 
-                        {/* THE FIX: Use a grid to stack them perfectly on top of each other */}
                         <div className="grid [grid-template-areas:'stack'] justify-items-start">
-                          {/* Name: Fades OUT on hover */}
                           <span className="[grid-area:stack] transition-opacity duration-200 opacity-100 group-hover/timebtn:opacity-0 truncate max-w-[100px]">
                             {item.completed_by}
                           </span>
 
-                          {/* Time: Fades IN on hover */}
                           {item.completion_time && (
                             <span className="[grid-area:stack] transition-opacity duration-200 opacity-0 group-hover/timebtn:opacity-100 font-mono text-[11px]">
                               {format(
@@ -1935,7 +1955,8 @@ const Dashboard = ({ session }) => {
                         </div>
                       </button>
                     ) : (
-                      item.status !== "Cancelled" && (
+                      item.status !== "Cancelled" &&
+                      !isQC && (
                         <button
                           onClick={() => initiateCompletion(item)}
                           className="transition-colors p-1.5 rounded-md text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 border border-transparent hover:border-emerald-200"
@@ -1950,16 +1971,19 @@ const Dashboard = ({ session }) => {
                     {item.bo_deleted_by ? (
                       <button
                         onClick={() => handleUndoBOClean(item)}
-                        disabled={!isHighLevel}
-                        className={`flex items-center gap-1.5 text-purple-600 font-bold transition-all ${isHighLevel ? "hover:text-red-600 cursor-pointer" : "cursor-default"}`}
+                        disabled={!canManageAdmin}
+                        className={`flex items-center gap-1.5 text-purple-600 font-bold transition-all ${canManageAdmin ? "hover:text-red-600 cursor-pointer" : "cursor-default"}`}
                         title={
-                          isHighLevel ? "Click to UNDO BO Clean" : "BO Cleaned"
+                          canManageAdmin
+                            ? "Click to UNDO BO Clean"
+                            : "BO Cleaned"
                         }
                       >
                         <Eraser size={12} /> {item.bo_deleted_by}
                       </button>
                     ) : (
                       item.status === "Completed" &&
+                      !isQC &&
                       (isBOCleanupEnabled(item.completion_time) ? (
                         <button
                           onClick={() => handleConfirmBODeleted(item)}
@@ -1985,62 +2009,70 @@ const Dashboard = ({ session }) => {
                     )}
                   </td>
                   <td className="px-6 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => handleOpenResolution(item, "extend")}
-                        disabled={
-                          item.status === "Completed" ||
-                          item.status === "Cancelled"
-                        }
-                        className={`p-1.5 rounded-md transition-all duration-200 ${
-                          item.status === "Completed" ||
-                          item.status === "Cancelled"
-                            ? "text-gray-200 cursor-not-allowed"
-                            : "text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                        }`}
-                        title={
-                          item.status === "Completed"
-                            ? "Maintenance Completed"
-                            : "Extend Time"
-                        }
-                      >
-                        <Clock size={15} />
-                      </button>
-
-                      {(() => {
-                        const isStarted =
-                          new Date() >= new Date(item.start_time);
-                        return (
+                    <div className="flex justify-end gap-2 items-center">
+                      {!isQC ? (
+                        <>
                           <button
-                            onClick={() => !isStarted && handleEdit(item)}
-                            disabled={isStarted}
-                            className={`p-1.5 rounded transition-colors ${isStarted ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"}`}
+                            onClick={() => handleOpenResolution(item, "extend")}
+                            disabled={
+                              item.status === "Completed" ||
+                              item.status === "Cancelled"
+                            }
+                            className={`p-1.5 rounded-md transition-all duration-200 ${
+                              item.status === "Completed" ||
+                              item.status === "Cancelled"
+                                ? "text-gray-200 cursor-not-allowed"
+                                : "text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                            }`}
                             title={
-                              isStarted
-                                ? "Maintenance Started. Use Extension."
-                                : "Edit"
+                              item.status === "Completed"
+                                ? "Maintenance Completed"
+                                : "Extend Time"
                             }
                           >
-                            <Edit2 size={15} />
+                            <Clock size={15} />
                           </button>
-                        );
-                      })()}
-                      {item.status !== "Cancelled" && (
-                        <button
-                          onClick={() => handleInitiateCancel(item)}
-                          className="text-gray-400 hover:text-orange-600 hover:bg-orange-50 p-1.5 rounded transition-colors"
-                          title="Cancel Maintenance"
-                        >
-                          <Ban size={15} />
-                        </button>
+
+                          {(() => {
+                            const isStarted =
+                              new Date() >= new Date(item.start_time);
+                            return (
+                              <button
+                                onClick={() => !isStarted && handleEdit(item)}
+                                disabled={isStarted}
+                                className={`p-1.5 rounded transition-colors ${isStarted ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"}`}
+                                title={
+                                  isStarted
+                                    ? "Maintenance Started. Use Extension."
+                                    : "Edit"
+                                }
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                            );
+                          })()}
+                          {item.status !== "Cancelled" && (
+                            <button
+                              onClick={() => handleInitiateCancel(item)}
+                              className="text-gray-400 hover:text-orange-600 hover:bg-orange-50 p-1.5 rounded transition-colors"
+                              title="Cancel Maintenance"
+                            >
+                              <Ban size={15} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleInitiateDelete(item)}
+                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"
+                            title="Delete Entry"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] font-bold bg-gray-100 text-gray-400 border border-gray-200 px-2 py-1 rounded select-none">
+                          VIEW ONLY
+                        </span>
                       )}
-                      <button
-                        onClick={() => handleInitiateDelete(item)}
-                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"
-                        title="Delete Entry"
-                      >
-                        <Trash2 size={15} />
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -2095,6 +2127,7 @@ const Dashboard = ({ session }) => {
           newUserCredentials={newUserCredentials}
           setNewUserCredentials={setNewUserCredentials}
           handleSendResetLink={handleSendResetLink} // <-- ADD THIS NEW PROP
+          canManageAdmin={canManageAdmin}
           generatePassword={() => {
             const chars =
               "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -2172,12 +2205,14 @@ const Dashboard = ({ session }) => {
         <ProviderManagerModal
           isOpen={isProviderManagerOpen}
           onClose={() => setIsProviderManagerOpen(false)}
+          canManageAdmin={canManageAdmin}
         />
 
         <ArchiveManagerModal
           isOpen={isArchiveModalOpen}
           onClose={() => setIsArchiveModalOpen(false)}
           userProfile={userProfile}
+          canManageAdmin={canManageAdmin}
         />
       </div>
     </LocalizationProvider>

@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Users,
   MessageSquare,
+  Timer,
 } from "lucide-react";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -37,12 +38,17 @@ const ResolutionModal = ({
   const [mode, setMode] = useState("select");
   const [extensionType, setExtensionType] = useState("time");
   const [newEndTime, setNewEndTime] = useState(null);
+  const [now, setNow] = useState(dayjs());
 
-  // --- LATE EXTENSION LOGIC ---
-  const now = dayjs();
-  const endTime = item ? dayjs(item.end_time) : dayjs();
-  const minutesRemaining = endTime.diff(now, "minute");
-  const isLateExtension = minutesRemaining <= 5;
+  // --- LATE EXTENSION & LOCK LOGIC ---
+  const endTime = item && item.end_time ? dayjs(item.end_time) : null;
+  const secondsRemaining = endTime ? endTime.diff(now, "second") : 0;
+
+  // Late Extension is triggered if we are within 5 minutes (300 seconds) of the end time, or past it.
+  const isLateExtension = endTime ? secondsRemaining <= 300 : false;
+
+  // The UI is locked if it's a Late Extension but we haven't actually reached the end time yet.
+  const isWaitingForEndTime = isLateExtension && secondsRemaining > 0;
 
   const isBoWebSop = item
     ? ["BO", "WEB", "BO/WEB"].includes(item.provider)
@@ -64,6 +70,7 @@ const ResolutionModal = ({
     return dayjs().isAfter(dayjs(item.start_time));
   };
 
+  // Setup Initial State on Open
   useEffect(() => {
     if (isOpen && item) {
       setMode(initialMode);
@@ -81,7 +88,25 @@ const ResolutionModal = ({
     }
   }, [isOpen, item, initialMode]);
 
+  // Real-Time Countdown Timer for Lock Overlay
+  useEffect(() => {
+    if (isOpen && mode === "extend") {
+      setNow(dayjs());
+      const timer = setInterval(() => setNow(dayjs()), 1000);
+      return () => clearInterval(timer);
+    }
+  }, [isOpen, mode]);
+
   if (!isOpen || !item) return null;
+
+  const formatCountdown = (totalSeconds) => {
+    if (totalSeconds <= 0) return "00:00";
+    const m = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (totalSeconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
 
   // --- VALIDATION ---
   let requiredKeys = [];
@@ -138,12 +163,14 @@ const ResolutionModal = ({
 
   const handleConfirmExtension = () => {
     if (extensionType === "time" && !newEndTime) return;
-    if (!isSopComplete) return;
+    if (!isSopComplete || isWaitingForEndTime) return;
     onExtend(item.id, newEndTime, extensionType === "notice");
   };
 
-  const toggleCheck = (key) =>
+  const toggleCheck = (key) => {
+    if (isWaitingForEndTime) return; // Prevent checking while locked
     setChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const renderStep = (
     key,
@@ -167,7 +194,9 @@ const ResolutionModal = ({
     return (
       <div
         onClick={() => toggleCheck(key)}
-        className={`relative flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 group select-none ${
+        className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-300 group select-none ${
+          isWaitingForEndTime ? "cursor-not-allowed" : "cursor-pointer"
+        } ${
           isChecked
             ? `${checkedBorder} shadow-md transform scale-[1.01]`
             : `bg-white ${baseBorder} hover:shadow-lg hover:-translate-y-0.5`
@@ -197,7 +226,12 @@ const ResolutionModal = ({
               {text}
             </span>
             {copyText && (
-              <div onClick={(e) => e.stopPropagation()} title="Copy Message">
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+                title="Copy Message"
+              >
                 <CopyButton
                   text={copyText}
                   size={14}
@@ -264,7 +298,8 @@ const ResolutionModal = ({
                 {item.provider}
               </h4>
               <p className="text-xs text-gray-500">
-                Scheduled End: {dayjs(item.end_time).format("YYYY-MM-DD HH:mm")}
+                Scheduled End:{" "}
+                {endTime ? endTime.format("YYYY-MM-DD HH:mm") : "N/A"}
               </p>
             </div>
             <div className="text-right">
@@ -383,176 +418,217 @@ const ResolutionModal = ({
               </div>
               <hr className="border-gray-100" />
 
-              {/* --- MAIN CONTENT GRID --- */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-                {/* LEFT: CHECKLIST */}
-                <div className="space-y-3">
-                  <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2">
-                    <FileText size={14} /> SOP Checklist{" "}
-                    <span className="text-red-500">*</span>
-                  </h5>
-                  <div className="space-y-2">
-                    {isLateExtension &&
-                      renderStep(
-                        "manualClose",
-                        "!",
+              {/* --- MAIN CONTENT GRID (WITH LOCK OVERLAY) --- */}
+              <div className="relative rounded-xl">
+                {/* THE LOCK OVERLAY */}
+                {isWaitingForEndTime && (
+                  <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl border border-orange-200 shadow-xl animate-in fade-in zoom-in-95 duration-300">
+                    <Lock
+                      size={36}
+                      className="text-orange-500 mb-3 animate-pulse"
+                    />
+                    <h4 className="text-xl font-bold text-gray-900 mb-2">
+                      Extension Locked
+                    </h4>
+                    <p className="text-sm text-gray-600 text-center max-w-sm leading-relaxed">
+                      Because this extension is within 5 minutes of completion,
+                      you must wait until exactly{" "}
+                      <strong className="text-orange-600 font-mono text-base">
+                        {endTime.format("HH:mm:ss")}
+                      </strong>{" "}
+                      before proceeding with the SOP.
+                    </p>
+                    <div className="mt-5 px-5 py-3 bg-orange-100 text-orange-800 font-mono font-bold rounded-xl text-2xl flex items-center gap-3 shadow-inner border border-orange-200">
+                      <Timer size={24} className="text-orange-600" />
+                      {formatCountdown(secondsRemaining)}
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  className={`grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch transition-all duration-500 ${isWaitingForEndTime ? "opacity-20 pointer-events-none blur-[1px]" : "opacity-100"}`}
+                >
+                  {/* LEFT: CHECKLIST */}
+                  <div className="space-y-3">
+                    <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2">
+                      <FileText size={14} /> SOP Checklist{" "}
+                      <span className="text-red-500">*</span>
+                    </h5>
+                    <div className="space-y-2">
+                      {isLateExtension &&
+                        renderStep(
+                          "manualClose",
+                          "!",
+                          <>
+                            <strong>CRITICAL: Manual Game Close</strong>
+                            <br />
+                            Late extension. Manually close game to prevent
+                            auto-open.
+                          </>,
+                          <Lock size={16} />,
+                          true,
+                        )}
+
+                      {isBoWebSop ? (
                         <>
-                          <strong>CRITICAL: Manual Game Close</strong>
-                          <br />
-                          Late extension. Manually close game to prevent
-                          auto-open.
-                        </>,
-                        <Lock size={16} />,
-                        true,
+                          {renderStep(
+                            "internalNotify",
+                            "1",
+                            <>
+                              Send message to <strong>IP Internal Group</strong>
+                              .<br />
+                              (Use copy text on right)
+                            </>,
+                            <Send size={16} />,
+                            false,
+                            getInternalGroupMsg(),
+                          )}
+                          {renderStep(
+                            "notifyMerchant",
+                            "2",
+                            <>
+                              Notify Merchant via Robot's BO Select:
+                              <br />
+                              <strong>
+                                【IC-Main Group Announcement(No Stag)】
+                              </strong>
+                            </>,
+                            <Users size={16} />,
+                          )}
+                          {renderStep(
+                            "reportBack",
+                            "3",
+                            <>
+                              Report back to <strong>IP Internal Group</strong>{" "}
+                              once task is completed.
+                            </>,
+                            <MessageSquare size={16} />,
+                            false,
+                            reportBackMsg,
+                          )}
+                          {renderStep(
+                            "redmineUpdate",
+                            "4",
+                            <>
+                              Update <strong>Redmine</strong>.
+                            </>,
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {renderStep(
+                            "boUpdate",
+                            "1",
+                            <>
+                              Update <strong>BO8.2</strong> Announcement.
+                              <br />
+                              {extensionType === "notice"
+                                ? 'Check "Until Further Notice".'
+                                : 'Update the "Start Content".'}
+                            </>,
+                          )}
+                          {renderStep(
+                            "internalNotify",
+                            "2",
+                            <>
+                              Notify <strong>IP Internal Group</strong>.<br />
+                              (Use copy text on right)
+                            </>,
+                          )}
+                          {renderStep(
+                            "notifyMerchant",
+                            "3",
+                            <>
+                              Notify Merchant via Robot's BO Select:
+                              <br />
+                              <strong>
+                                【IC-Maintenance&Promo of providers】
+                              </strong>
+                            </>,
+                          )}
+                          {renderStep(
+                            "redmineUpdate",
+                            "4",
+                            <>
+                              Update <strong>Redmine & Sync BO8.7</strong>.
+                            </>,
+                          )}
+                        </>
                       )}
-
-                    {isBoWebSop ? (
-                      <>
-                        {renderStep(
-                          "internalNotify",
-                          "1",
-                          <>
-                            Send message to <strong>IP Internal Group</strong>.
-                            <br />
-                            (Use copy text on right)
-                          </>,
-                          <Send size={16} />,
-                          false,
-                          getInternalGroupMsg(),
-                        )}
-                        {renderStep(
-                          "notifyMerchant",
-                          "2",
-                          <>
-                            Notify Merchant via Robot's BO Select:
-                            <br />
-                            <strong>
-                              【IC-Main Group Announcement(No Stag)】
-                            </strong>
-                          </>,
-                          <Users size={16} />,
-                        )}
-                        {renderStep(
-                          "reportBack",
-                          "3",
-                          <>
-                            Report back to <strong>IP Internal Group</strong>{" "}
-                            once task is completed.
-                          </>,
-                          <MessageSquare size={16} />,
-                          false,
-                          reportBackMsg,
-                        )}
-                        {renderStep(
-                          "redmineUpdate",
-                          "4",
-                          <>
-                            Update <strong>Redmine</strong>.
-                          </>,
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {renderStep(
-                          "boUpdate",
-                          "1",
-                          <>
-                            Update <strong>BO8.2</strong> Announcement.
-                            <br />
-                            {extensionType === "notice"
-                              ? 'Check "Until Further Notice".'
-                              : 'Update the "Start Content".'}
-                          </>,
-                        )}
-                        {renderStep(
-                          "internalNotify",
-                          "2",
-                          <>
-                            Notify <strong>IP Internal Group</strong>.<br />
-                            (Use copy text on right)
-                          </>,
-                        )}
-                        {renderStep(
-                          "notifyMerchant",
-                          "3",
-                          <>
-                            Notify Merchant via Robot's BO Select:
-                            <br />
-                            <strong>
-                              【IC-Maintenance&Promo of providers】
-                            </strong>
-                          </>,
-                        )}
-                        {renderStep(
-                          "redmineUpdate",
-                          "4",
-                          <>
-                            Update <strong>Redmine & Sync BO8.7</strong>.
-                          </>,
-                        )}
-                      </>
-                    )}
+                    </div>
                   </div>
-                </div>
 
-                {/* RIGHT: MESSAGES */}
-                <div className="space-y-3 flex flex-col h-full">
-                  <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2">
-                    <Send size={14} /> Messages to Copy
-                  </h5>
+                  {/* RIGHT: MESSAGES */}
+                  <div className="space-y-3 flex flex-col h-full">
+                    <h5 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2">
+                      <Send size={14} /> Messages to Copy
+                    </h5>
 
-                  {isLateExtension && (
-                    <div className="space-y-1 shrink-0">
-                      <label className="text-[10px] font-bold text-red-500 animate-pulse">
-                        MANUAL CLOSE MSG (CRITICAL)
-                      </label>
-                      <div className="flex gap-2">
-                        <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">
-                          {getManualCloseMsg()}
+                    {isLateExtension && (
+                      <div className="space-y-1 shrink-0">
+                        <label className="text-[10px] font-bold text-red-500 animate-pulse">
+                          MANUAL CLOSE MSG (CRITICAL)
+                        </label>
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">
+                            {getManualCloseMsg()}
+                          </div>
+                          <CopyButton
+                            text={getManualCloseMsg()}
+                            disabled={isWaitingForEndTime}
+                          />
                         </div>
-                        <CopyButton text={getManualCloseMsg()} />
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* INTERNAL GROUP MSG SECTION */}
-                  <div className="space-y-1 shrink-0">
-                    <label className="text-[10px] font-bold text-gray-400">
-                      INTERNAL GROUP MSG
-                    </label>
-                    <div className="flex gap-2">
-                      <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">
-                        {getInternalGroupMsg()}
-                      </div>
-                      <CopyButton text={getInternalGroupMsg()} />
-                    </div>
-                  </div>
-
-                  {/* REPORT BACK MSG FOR BO/WEB */}
-                  {isBoWebSop && (
+                    {/* INTERNAL GROUP MSG SECTION */}
                     <div className="space-y-1 shrink-0">
                       <label className="text-[10px] font-bold text-gray-400">
-                        REPORT BACK MSG
+                        INTERNAL GROUP MSG
                       </label>
                       <div className="flex gap-2">
                         <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">
-                          {reportBackMsg}
+                          {getInternalGroupMsg()}
                         </div>
-                        <CopyButton text={reportBackMsg} />
+                        <CopyButton
+                          text={getInternalGroupMsg()}
+                          disabled={isWaitingForEndTime}
+                        />
                       </div>
                     </div>
-                  )}
 
-                  {/* Expanded Announcement Section */}
-                  <div className="space-y-1 flex-1 flex flex-col min-h-0">
-                    <label className="text-[10px] font-bold text-gray-400 shrink-0">
-                      ANNOUNCEMENT BODY
-                    </label>
-                    <div className="flex gap-2 flex-1 min-h-0">
-                      <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 overflow-y-auto min-h-[80px] h-full whitespace-pre-wrap">
-                        {getAnnouncementBody()}
+                    {/* REPORT BACK MSG FOR BO/WEB */}
+                    {isBoWebSop && (
+                      <div className="space-y-1 shrink-0">
+                        <label className="text-[10px] font-bold text-gray-400">
+                          REPORT BACK MSG
+                        </label>
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 truncate">
+                            {reportBackMsg}
+                          </div>
+                          <CopyButton
+                            text={reportBackMsg}
+                            disabled={isWaitingForEndTime}
+                          />
+                        </div>
                       </div>
-                      <CopyButton text={getAnnouncementBody()} />
+                    )}
+
+                    {/* Expanded Announcement Section */}
+                    <div className="space-y-1 flex-1 flex flex-col min-h-0">
+                      <label className="text-[10px] font-bold text-gray-400 shrink-0">
+                        ANNOUNCEMENT BODY
+                      </label>
+                      <div className="flex gap-2 flex-1 min-h-0">
+                        <div className="flex-1 bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono text-gray-700 overflow-y-auto min-h-[80px] h-full whitespace-pre-wrap">
+                          {getAnnouncementBody()}
+                        </div>
+                        <CopyButton
+                          text={getAnnouncementBody()}
+                          disabled={isWaitingForEndTime}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -563,17 +639,19 @@ const ResolutionModal = ({
                   onClick={() =>
                     initialMode === "extend" ? onClose() : setMode("select")
                   }
-                  className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg"
+                  className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   {initialMode === "extend" ? "Cancel" : "Back"}
                 </button>
                 <button
                   onClick={handleConfirmExtension}
-                  disabled={loading || !isSopComplete}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all ${isSopComplete ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                  disabled={loading || !isSopComplete || isWaitingForEndTime}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all ${isSopComplete && !isWaitingForEndTime ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
                 >
                   {loading ? (
                     <Loader2 size={14} className="animate-spin" />
+                  ) : isWaitingForEndTime ? (
+                    "Wait for End Time to Proceed"
                   ) : isSopComplete ? (
                     "Confirm Extension & Update System"
                   ) : (

@@ -367,7 +367,8 @@ const Dashboard = ({ session }) => {
             // If positive, Now is PAST the target.
             const diff = differenceInMinutes(now, twoHoursLater);
 
-            const reminderId = `${m.id}-2hr-reminder`;
+            // --- FIXED: Appended m.completion_time to reset warning if undone ---
+            const reminderId = `${m.id}-2hr-reminder-${m.completion_time}`;
 
             // UPDATED: Check (diff >= 0) to ensure we are AFTER the 2-hour mark
             if (diff >= 0 && diff <= 5 && !alertedRef.current.has(reminderId)) {
@@ -457,7 +458,9 @@ const Dashboard = ({ session }) => {
         const firstName = rawName.split(" ")[0].trim();
         // -----------------------------------------
 
-        const alertId30 = `${m.id}-30min-warn`;
+        // --- FIXED: Appended m.end_time so the system resets the warning if time is extended ---
+        const alertId30 = `${m.id}-30min-warn-${m.end_time}`;
+
         if (
           minutesLeft <= 30 &&
           minutesLeft > 25 &&
@@ -475,16 +478,25 @@ const Dashboard = ({ session }) => {
           alertedRef.current.add(alertId30);
         }
 
-        const alertIdGrace = `${m.id}-grace-period`;
+        // --- FIXED: Appended m.end_time to reset grace period if extended ---
+        const alertIdGrace = `${m.id}-grace-period-${m.end_time}`;
+
         if (
           minutesPast > 0 &&
           minutesPast <= 5 &&
           !alertedRef.current.has(alertIdGrace)
         ) {
-          // UPDATED: Uses ${firstName}
-          const script = `Hi Team, this is ${firstName}. May we confirm if the scheduled maintenance is completed now ? Thank You.`;
+          // --- UPDATED: DYNAMIC WORDING FOR EXTENDED VS SCHEDULED ---
+          const isExtended = m.type === "Extended Maintenance";
+          const maintTypeWord = isExtended ? "extended" : "scheduled";
+          const notifTitle = isExtended
+            ? "Extended Time Reached"
+            : "Scheduled Time Reached";
+
+          const script = `Hi Team, this is ${firstName}. May we confirm if the ${maintTypeWord} maintenance is completed now ? Thank You.`;
+
           triggerNotification(
-            `Scheduled Time Reached`,
+            notifTitle,
             `Please confirm completion for 【${m.provider}】.`,
             "warning",
             script,

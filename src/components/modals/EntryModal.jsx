@@ -127,13 +127,15 @@ const EntryModal = ({
   const isUrgent = currentTypeStr.includes("Urgent");
   const isCancelled = currentTypeStr === "Cancelled";
 
+  // --- UPDATED: Allow bypass of contact/merchant checks if isPartGame is true ---
   const isUrgentLocked =
     isUrgent &&
     !isBoWebSop &&
-    (!urgentChecks.contact ||
+    ((!isPartGame && !urgentChecks.contact) ||
       !urgentChecks.bo82 ||
-      !urgentChecks.merchant ||
+      (!isPartGame && !urgentChecks.merchant) ||
       !urgentChecks.redmine);
+
   const isBoWebLocked =
     isBoWebSop &&
     !isUrgent &&
@@ -160,7 +162,12 @@ const EntryModal = ({
       setShowRescheduleSop(false);
       setWasTimeChanged(false);
       setRescheduleChecklist({ internal: false, boSync: false });
-      setUrgentChecks({ internal: false, bo82: false, redmine: false });
+      setUrgentChecks({
+        contact: false,
+        bo82: false,
+        merchant: false,
+        redmine: false,
+      }); // FIXED: properly resetting all
 
       const isEdit = !!editingId;
       setBoWebChecks({
@@ -1220,87 +1227,81 @@ const EntryModal = ({
                   <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-1">
                     Required SOP Actions
                   </h4>
-                  <div
-                    onClick={() =>
-                      setUrgentChecks((prev) => ({
-                        ...prev,
-                        contact: !prev.contact,
-                      }))
-                    }
-                    className={`flex flex-col gap-2 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.contact ? "bg-red-50 border-red-300" : "bg-white border-gray-200 hover:border-red-200"}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.contact ? "bg-red-600 border-red-600" : "border-gray-300 bg-white"}`}
-                      >
-                        {urgentChecks.contact && (
-                          <Check
-                            size={10}
-                            className="text-white"
-                            strokeWidth={4}
-                          />
-                        )}
-                      </div>
-                      <span
-                        className={`text-xs ${urgentChecks.contact ? "text-red-900 font-medium" : "text-gray-600"}`}
-                      >
-                        1. Contact Personnel to Open/Close Game
-                      </span>
-                    </div>
-                    <div className="pl-7 space-y-1.5">
-                      {isPartGame ? (
-                        <span className="text-[10px] text-gray-500 block">
-                          Lobby remains open. Just notify leader.
-                        </span>
-                      ) : (
-                        <>
-                          <div className="text-[10px] text-gray-500 flex flex-col gap-1 bg-gray-50 p-2 rounded border border-gray-100">
-                            <div className="flex gap-1">
-                              <span className="font-bold text-gray-700 whitespace-nowrap">
-                                Mon-Fri 10AM-7PM:
-                              </span>{" "}
-                              <span>Carmen (IP Internal) / Support</span>
-                            </div>
-                            <div className="flex gap-1">
-                              <span className="font-bold text-gray-700 whitespace-nowrap">
-                                Outside of above:
-                              </span>{" "}
-                              <span>Open/Close Teams Group</span>
-                            </div>
-                            <div className="flex gap-1">
-                              <span className="font-bold text-red-600 whitespace-nowrap">
-                                No Reply? (&gt;15m):
-                              </span>{" "}
-                              <span>Live Chat on WEB for QQ288 Support</span>
-                            </div>
-                            <div className="flex gap-1">
-                              <span className="font-bold text-red-700 whitespace-nowrap">
-                                Still No Reply?
-                              </span>{" "}
-                              <span className="font-bold text-red-700 underline">
-                                Call Carmen
-                              </span>
-                            </div>
-                          </div>
-                          <div
-                            className="mt-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex gap-2">
-                              <div className="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">
-                                {urgentInternalMsg}
-                              </div>
-                              <CopyButton
-                                text={urgentInternalMsg}
-                                label="COPY"
-                              />
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
 
+                  {/* --- UPDATED: HIDE CONTACT PERSONNEL IF PART OF GAME --- */}
+                  {!isPartGame && (
+                    <div
+                      onClick={() =>
+                        setUrgentChecks((prev) => ({
+                          ...prev,
+                          contact: !prev.contact,
+                        }))
+                      }
+                      className={`flex flex-col gap-2 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.contact ? "bg-red-50 border-red-300" : "bg-white border-gray-200 hover:border-red-200"}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.contact ? "bg-red-600 border-red-600" : "border-gray-300 bg-white"}`}
+                        >
+                          {urgentChecks.contact && (
+                            <Check
+                              size={10}
+                              className="text-white"
+                              strokeWidth={4}
+                            />
+                          )}
+                        </div>
+                        <span
+                          className={`text-xs ${urgentChecks.contact ? "text-red-900 font-medium" : "text-gray-600"}`}
+                        >
+                          1. Contact Personnel to Open/Close Game
+                        </span>
+                      </div>
+                      <div className="pl-7 space-y-1.5">
+                        <div className="text-[10px] text-gray-500 flex flex-col gap-1 bg-gray-50 p-2 rounded border border-gray-100">
+                          <div className="flex gap-1">
+                            <span className="font-bold text-gray-700 whitespace-nowrap">
+                              Mon-Fri 10AM-7PM:
+                            </span>{" "}
+                            <span>Carmen (IP Internal) / Support</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <span className="font-bold text-gray-700 whitespace-nowrap">
+                              Outside of above:
+                            </span>{" "}
+                            <span>Open/Close Teams Group</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <span className="font-bold text-red-600 whitespace-nowrap">
+                              No Reply? (&gt;15m):
+                            </span>{" "}
+                            <span>Live Chat on WEB for QQ288 Support</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <span className="font-bold text-red-700 whitespace-nowrap">
+                              Still No Reply?
+                            </span>{" "}
+                            <span className="font-bold text-red-700 underline">
+                              Call Carmen
+                            </span>
+                          </div>
+                        </div>
+                        <div
+                          className="mt-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex gap-2">
+                            <div className="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">
+                              {urgentInternalMsg}
+                            </div>
+                            <CopyButton text={urgentInternalMsg} label="COPY" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- UPDATED: DYNAMIC NUMBERING FOR BO 8.2 --- */}
                   <div
                     onClick={() =>
                       setUrgentChecks((prev) => ({ ...prev, bo82: !prev.bo82 }))
@@ -1327,39 +1328,44 @@ const EntryModal = ({
                         </>
                       ) : (
                         <>
-                          2. Create <b>BO 8.2</b> (Do NOT Sync 8.7)
+                          {isPartGame ? "1." : "2."} Create <b>BO 8.2</b> (Do
+                          NOT Sync 8.7)
                         </>
                       )}
                     </span>
                   </div>
 
-                  <div
-                    onClick={() =>
-                      setUrgentChecks((prev) => ({
-                        ...prev,
-                        merchant: !prev.merchant,
-                      }))
-                    }
-                    className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.merchant ? "bg-red-50 border-red-300" : "bg-white border-gray-200 hover:border-red-200"}`}
-                  >
+                  {/* --- UPDATED: HIDE MERCHANT NOTIFY IF PART OF GAME --- */}
+                  {!isPartGame && (
                     <div
-                      className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.merchant ? "bg-red-600 border-red-600" : "border-gray-300 bg-white"}`}
+                      onClick={() =>
+                        setUrgentChecks((prev) => ({
+                          ...prev,
+                          merchant: !prev.merchant,
+                        }))
+                      }
+                      className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.merchant ? "bg-red-50 border-red-300" : "bg-white border-gray-200 hover:border-red-200"}`}
                     >
-                      {urgentChecks.merchant && (
-                        <Check
-                          size={10}
-                          className="text-white"
-                          strokeWidth={4}
-                        />
-                      )}
+                      <div
+                        className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.merchant ? "bg-red-600 border-red-600" : "border-gray-300 bg-white"}`}
+                      >
+                        {urgentChecks.merchant && (
+                          <Check
+                            size={10}
+                            className="text-white"
+                            strokeWidth={4}
+                          />
+                        )}
+                      </div>
+                      <span
+                        className={`text-xs ${urgentChecks.merchant ? "text-red-900 font-medium" : "text-gray-600"}`}
+                      >
+                        3. Notify Merchants using the <b>BOT</b>
+                      </span>
                     </div>
-                    <span
-                      className={`text-xs ${urgentChecks.merchant ? "text-red-900 font-medium" : "text-gray-600"}`}
-                    >
-                      3. Notify Merchants using the <b>BOT</b>
-                    </span>
-                  </div>
+                  )}
 
+                  {/* --- UPDATED: DYNAMIC NUMBERING FOR REDMINE --- */}
                   <div
                     onClick={() =>
                       setUrgentChecks((prev) => ({
@@ -1383,7 +1389,8 @@ const EntryModal = ({
                     <span
                       className={`text-xs ${urgentChecks.redmine ? "text-red-900 font-medium" : "text-gray-600"}`}
                     >
-                      4. Create <b>Redmine Ticket</b> (Attach Screenshot)
+                      {isPartGame ? "2." : "4."} Create <b>Redmine Ticket</b>{" "}
+                      (Attach Screenshot)
                     </span>
                   </div>
                 </div>

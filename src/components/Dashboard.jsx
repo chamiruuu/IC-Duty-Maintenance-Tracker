@@ -367,7 +367,7 @@ const Dashboard = ({ session }) => {
             // If positive, Now is PAST the target.
             const diff = differenceInMinutes(now, twoHoursLater);
 
-            // --- FIXED: Appended m.completion_time to reset warning if undone ---
+            // Appended completion_time to ensure it resets if completion is undone/redone
             const reminderId = `${m.id}-2hr-reminder-${m.completion_time}`;
 
             // UPDATED: Check (diff >= 0) to ensure we are AFTER the 2-hour mark
@@ -1217,6 +1217,13 @@ const Dashboard = ({ session }) => {
           EXTENDED
         </span>
       );
+    // --- UPDATED: New Badge for Part of the Game (Must be placed ABOVE the "Urgent" check) ---
+    if (item.type && item.type.includes("Part of the Game"))
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+          PART OF GAME
+        </span>
+      );
     if (item.type === "Urgent")
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
@@ -1227,13 +1234,6 @@ const Dashboard = ({ session }) => {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-500 border border-gray-300 line-through">
           CANCELLED
-        </span>
-      );
-    // --- UPDATED: New Badge for Part of the Game ---
-    if (item.type === "Part of the Game")
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-          PART OF GAME
         </span>
       );
 
@@ -1874,7 +1874,7 @@ const Dashboard = ({ session }) => {
               {filteredMaintenances.map((item, index) => (
                 <tr
                   key={item.id}
-                  className={`hover:bg-gray-50 transition-colors group ${item.status === "Completed" ? "bg-purple-50/20" : ""} ${item.type === "Urgent" && item.status !== "Completed" ? "bg-red-50/40" : ""}`}
+                  className={`hover:bg-gray-50 transition-colors group ${item.status === "Completed" ? "bg-purple-50/20" : ""} ${item.type && item.type.includes("Urgent") && item.status !== "Completed" ? "bg-red-50/40" : ""}`}
                 >
                   <td className="px-6 py-3 text-center text-gray-400 text-xs">
                     {index + 1}

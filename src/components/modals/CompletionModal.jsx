@@ -53,7 +53,10 @@ const CompletionModal = ({
     item.type === "Extended Maintenance" || item.is_until_further_notice;
   const isUrgent = item.type && item.type.toLowerCase().includes("urgent");
   const showRobotNotify = isUrgent || item.type === "Extended Maintenance";
-  const isPartGame = item.type && item.type.includes("Part of the Game");
+
+  // --- FIXED: Now properly detects "Part of the Game" even if it was extended ---
+  const isPartGame =
+    item.type?.includes("Part of the Game") || !!item.affected_games;
 
   // BO/WEB Identifier
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(item.provider);

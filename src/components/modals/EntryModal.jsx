@@ -73,6 +73,45 @@ const EntryModal = ({
 
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(formData.provider);
 
+  // --- NEW: Universal Date Formatter for all Scripts ---
+  const getTimePhrases = (start, end, isUFN) => {
+    if (!start)
+      return {
+        title: "",
+        body: "",
+        scheduledUfnTitle: "",
+        scheduledUfnBody: "",
+      };
+    const dStart = start.format("YYYY-MM-DD");
+    const tStart = start.format("HH:mm");
+
+    if (isUFN) {
+      return {
+        title: `until further notice (from ${dStart} ${tStart})`,
+        body: `until further notice`,
+        scheduledUfnTitle: `on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice.`,
+        scheduledUfnBody: `on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice.`,
+      };
+    }
+
+    const dEnd = end ? end.format("YYYY-MM-DD") : "??-??";
+    const tEnd = end ? end.format("HH:mm") : "??:??";
+
+    // MULTI-DAY CHECK
+    if (end && dStart !== dEnd) {
+      return {
+        title: `from ${dStart} ${tStart} to ${dEnd} ${tEnd}(GMT+8)`,
+        body: `from ${dStart} ${tStart} to ${dEnd} ${tEnd}(GMT+8)`,
+      };
+    } else {
+      // SINGLE-DAY CHECK
+      return {
+        title: `on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`,
+        body: `on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`,
+      };
+    }
+  };
+
   const generatePartGameScript = (isUrgentMode) => {
     const {
       provider,
@@ -91,28 +130,27 @@ const EntryModal = ({
       ? `${provider}-part of the game`
       : `${provider}-${gameName}`;
 
-    const dStart = startTime.format("YYYY-MM-DD");
-    const tStart = startTime.format("HH:mm");
-    const tEnd = endTime ? endTime.format("HH:mm") : "";
+    // Get formatted time strings
+    const time = getTimePhrases(startTime, endTime, isUntilFurtherNotice);
 
     let title = "";
     let body = "";
 
     if (isUrgentMode) {
       if (isUntilFurtherNotice) {
-        title = `【${subjectName}】【Urgent Maintenance】until further notice(from ${dStart} ${tStart})`;
-        body = `Hello there,\nPlease be informed that【${subjectName}】 is going urgent maintenance until further notice,during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+        title = `【${subjectName}】【Urgent Maintenance】until further notice(from ${startTime.format("YYYY-MM-DD HH:mm")})`;
+        body = `Hello there,\nPlease be informed that【${subjectName}】 is going urgent maintenance until further notice, during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
       } else {
-        title = `【${subjectName}】【Urgent Maintenance】on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
-        body = `Hello there,\nPlease be informed that【${subjectName}】 is going urgent maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8) , during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+        title = `【${subjectName}】【Urgent Maintenance】${time.title}`;
+        body = `Hello there,\nPlease be informed that【${subjectName}】 is going urgent maintenance ${time.body} , during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
       }
     } else {
       if (isUntilFurtherNotice) {
-        title = `【${subjectName}】scheduled to have system maintenance on ${dStart}(GMT+8), and the end time will be until further notice.`;
-        body = `Hello there,\nPlease be informed that【${subjectName}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8), and the end time will be until further notice. During the period,other games can be able to access and the game  lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+        title = `【${subjectName}】scheduled to have system maintenance ${time.scheduledUfnTitle}`;
+        body = `Hello there,\nPlease be informed that【${subjectName}】scheduled to have system maintenance ${time.scheduledUfnBody} During the period,other games can be able to access and the game  lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
       } else {
-        title = `【${subjectName}】scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
-        body = `Hello there,\nPlease be informed that 【${subjectName}】scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd} (GMT+8), during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+        title = `【${subjectName}】scheduled to have system maintenance ${time.title}`;
+        body = `Hello there,\nPlease be informed that 【${subjectName}】scheduled to have system maintenance ${time.body}, during the period,other games can be able to access and the game lobby will not close . Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
       }
     }
 
@@ -127,7 +165,6 @@ const EntryModal = ({
   const isUrgent = currentTypeStr.includes("Urgent");
   const isCancelled = currentTypeStr === "Cancelled";
 
-  // --- UPDATED: Allow bypass of contact/merchant checks if isPartGame is true ---
   const isUrgentLocked =
     isUrgent &&
     !isBoWebSop &&
@@ -154,7 +191,6 @@ const EntryModal = ({
     }
   }, [formData, isPartGame, isUrgent]);
 
-  // Modal Open Hook
   useEffect(() => {
     if (isOpen) {
       setSearchTerm(formData.provider || "");
@@ -167,7 +203,7 @@ const EntryModal = ({
         bo82: false,
         merchant: false,
         redmine: false,
-      }); // FIXED: properly resetting all
+      });
 
       const isEdit = !!editingId;
       setBoWebChecks({
@@ -203,7 +239,6 @@ const EntryModal = ({
     }
   }, [isOpen, editingId]);
 
-  // Time Change Tracking Hook
   useEffect(() => {
     if (editingId && initialTimes.start) {
       const fmt = "YYYY-MM-DD HH:mm";
@@ -455,18 +490,16 @@ const EntryModal = ({
       return scriptData.body;
     }
 
-    const dStart = startTime.format("YYYY-MM-DD");
-    const tStart = startTime.format("HH:mm");
-    const tEnd = endTime ? endTime.format("HH:mm") : "";
+    const time = getTimePhrases(startTime, endTime, isUntilFurtherNotice);
 
     if (isUntilFurtherNotice) {
       if (part === "title")
-        return `【${provider}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice.`;
-      return `Hello there\nPlease be informed that【${provider}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice.the game lobby will closed during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+        return `【${provider}】scheduled to have system maintenance ${time.scheduledUfnTitle}`;
+      return `Hello there\nPlease be informed that【${provider}】scheduled to have system maintenance ${time.scheduledUfnBody} The game lobby will closed during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     } else {
       if (part === "title")
-        return `【${provider}】scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
-      return `Hello there, \nPlease be informed that 【${provider}】 scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8) , the game lobby will closed during this period.\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
+        return `【${provider}】scheduled to have system maintenance ${time.title}`;
+      return `Hello there, \nPlease be informed that 【${provider}】 scheduled to have system maintenance ${time.body} , the game lobby will closed during this period.\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
     }
   };
 
@@ -477,9 +510,7 @@ const EntryModal = ({
     if (!formData.startTime)
       return { scriptMsg: "", reportBack: "", title: "" };
 
-    const dStart = formData.startTime.format("YYYY-MM-DD");
-    const tStart = formData.startTime.format("HH:mm");
-    const tEnd = formData.endTime ? formData.endTime.format("HH:mm") : "??:??";
+    const time = getTimePhrases(formData.startTime, formData.endTime, isUFN);
 
     let scriptMsg = "";
     let title = "";
@@ -493,11 +524,11 @@ const EntryModal = ({
           : target === "WEB"
             ? "Website"
             : "BO and Website";
-      title = `【${target}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice.`;
-      scriptMsg = `Hello there\nPlease be informed that【${target}】scheduled to have system maintenance on ${dStart} ${tStart}(GMT+8) , and the end time will be until further notice. The ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+      title = `【${target}】scheduled to have system maintenance ${time.scheduledUfnTitle}`;
+      scriptMsg = `Hello there\nPlease be informed that【${target}】scheduled to have system maintenance ${time.scheduledUfnBody} The ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     } else {
-      title = `【${target}】scheduled to have system maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
-      scriptMsg = `Hello Dear team,\n【${target}】scheduled to maintenance on ${dStart} between ${tStart} to ${tEnd} (GMT+8), the ${target === "BO/WEB" ? "BO/WEB" : target} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
+      title = `【${target}】scheduled to have system maintenance ${time.title}`;
+      scriptMsg = `Hello Dear team,\n【${target}】scheduled to maintenance ${time.body}, the ${target === "BO/WEB" ? "BO/WEB" : target} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
     }
 
     return { scriptMsg, reportBack, title };
@@ -506,11 +537,9 @@ const EntryModal = ({
   const getUrgentBoWebScripts = () => {
     const target = formData.provider;
     const isUFN = formData.isUntilFurtherNotice;
-    const dStart = formData.startTime
-      ? formData.startTime.format("YYYY-MM-DD")
-      : "";
-    const tStart = formData.startTime ? formData.startTime.format("HH:mm") : "";
-    const tEnd = formData.endTime ? formData.endTime.format("HH:mm") : "??:??";
+
+    const time = getTimePhrases(formData.startTime, formData.endTime, isUFN);
+
     const targetDesc =
       target === "BO" ? "BO" : target === "WEB" ? "Website" : "BO and Website";
 
@@ -518,11 +547,11 @@ const EntryModal = ({
     let title = "";
 
     if (isUFN) {
-      title = `【${target}】【Urgent Maintenance】until further notice (from ${dStart} ${tStart})`;
+      title = `【${target}】【Urgent Maintenance】until further notice (from ${formData.startTime.format("YYYY-MM-DD HH:mm")})`;
       scriptMsg = `Hello there\nPlease be informed that【${target}】 is going urgent maintenance until further notice,the ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     } else {
-      title = `【${target}】【Urgent Maintenance】on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`;
-      scriptMsg = `Hello there\nPlease be informed that【${target}】 is going urgent maintenance on ${dStart} between ${tStart} to ${tEnd}(GMT+8) ,the ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+      title = `【${target}】【Urgent Maintenance】${time.title}`;
+      scriptMsg = `Hello there\nPlease be informed that【${target}】 is going urgent maintenance ${time.body} ,the ${targetDesc} will close during this period.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     }
     return {
       scriptMsg,
@@ -1228,7 +1257,6 @@ const EntryModal = ({
                     Required SOP Actions
                   </h4>
 
-                  {/* --- UPDATED: HIDE CONTACT PERSONNEL IF PART OF GAME --- */}
                   {!isPartGame && (
                     <div
                       onClick={() =>
@@ -1301,7 +1329,6 @@ const EntryModal = ({
                     </div>
                   )}
 
-                  {/* --- UPDATED: DYNAMIC NUMBERING FOR BO 8.2 --- */}
                   <div
                     onClick={() =>
                       setUrgentChecks((prev) => ({ ...prev, bo82: !prev.bo82 }))
@@ -1335,7 +1362,6 @@ const EntryModal = ({
                     </span>
                   </div>
 
-                  {/* --- UPDATED: HIDE MERCHANT NOTIFY IF PART OF GAME --- */}
                   {!isPartGame && (
                     <div
                       onClick={() =>
@@ -1365,7 +1391,6 @@ const EntryModal = ({
                     </div>
                   )}
 
-                  {/* --- UPDATED: DYNAMIC NUMBERING FOR REDMINE --- */}
                   <div
                     onClick={() =>
                       setUrgentChecks((prev) => ({

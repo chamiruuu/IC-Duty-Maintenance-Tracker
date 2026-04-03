@@ -1160,10 +1160,7 @@ const Dashboard = ({ session }) => {
       cancellation_pending: isPendingCancel,
       affected_games: formData.affectedGames,
       is_in_house: formData.isInHouse,
-
-      // --- ADD THIS LINE ---
       status: finalStatus,
-      // --------------------
     };
 
     let error;
@@ -1172,7 +1169,6 @@ const Dashboard = ({ session }) => {
         .from("maintenances")
         .update(payload)
         .eq("id", editingId));
-    // You can also simplify the insert line below since status is now in payload:
     else
       ({ error } = await supabase
         .from("maintenances")
@@ -1194,6 +1190,7 @@ const Dashboard = ({ session }) => {
 
   const getRedmineDisplayId = (ticketNum) =>
     ticketNum ? `CS-${ticketNum.toString().replace(/\D/g, "")}` : "-";
+
   const formatSmartDate = (startIso, endIso, isNotice, status) => {
     if (!startIso) return "-";
     const start = toZonedTime(new Date(startIso), timeZone);
@@ -1210,26 +1207,32 @@ const Dashboard = ({ session }) => {
       : `${startStr}, ${startTime} - ${fullEnd}`;
   };
 
+  // --- UPDATED: Badge Logic for "PART OF GAME" ---
   const getTypeBadge = (item) => {
-    if (item.type === "Extended Maintenance")
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
-          EXTENDED
-        </span>
-      );
-    // --- UPDATED: New Badge for Part of the Game (Must be placed ABOVE the "Urgent" check) ---
-    if (item.type && item.type.includes("Part of the Game"))
+    // 1. MUST check Part of the Game first. If it is, return JUST the purple badge.
+    if (item.type?.includes("Part of the Game") || !!item.affected_games) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
           PART OF GAME
         </span>
       );
+    }
+
+    if (item.type === "Extended Maintenance") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
+          EXTENDED
+        </span>
+      );
+    }
+
     if (item.type === "Urgent")
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
           URGENT
         </span>
       );
+
     if (item.type === "Cancelled" || item.status === "Cancelled")
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-500 border border-gray-300 line-through">
@@ -1328,21 +1331,16 @@ const Dashboard = ({ session }) => {
     );
   };
 
-  // --- UPDATED SORTING LOGIC ---
   const getSortedMaintenances = (items) => {
     const now = new Date();
 
     return [...items].sort((a, b) => {
-      // --- 1. HISTORY VIEW: Sort by Start Time (Newest First) ---
       if (view === "history") {
         return (
           new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
         );
       }
 
-      // --- 2. PENDING VIEW: Smart Priority Sort ---
-
-      // Helper to determine the "Tier" of an item
       const getTier = (item) => {
         const isCompleted = item.status === "Completed";
         const isCancelled = item.status === "Cancelled";
@@ -1350,31 +1348,18 @@ const Dashboard = ({ session }) => {
         const startTime = new Date(item.start_time);
         const isStarted = now >= startTime;
 
-        // Tier 1: Urgent & Ongoing (Top Priority)
         if (isUrgent && isStarted && !isCompleted && !isCancelled) return 1;
-
-        // Tier 2: Regular Ongoing
         if (!isUrgent && isStarted && !isCompleted && !isCancelled) return 2;
-
-        // Tier 3: Completed (Pending BO Clean)
         if (isCompleted) return 3;
-
-        // Tier 4: Upcoming OR Cancelled
-        // We group them together here so we can sort them by Date vs Status below
         if (!isStarted || isCancelled) return 4;
-
-        return 5; // Fallback
+        return 5;
       };
 
       const tierA = getTier(a);
       const tierB = getTier(b);
 
-      // First, sort by Tier (Lower number = Higher priority)
       if (tierA !== tierB) return tierA - tierB;
 
-      // --- TIE-BREAKERS WITHIN TIERS ---
-
-      // Tier 3 (Completed): Sort by Completion Time (Oldest first = Needs cleaning longest)
       if (tierA === 3) {
         const completeA = a.completion_time
           ? new Date(a.completion_time).getTime()
@@ -1385,45 +1370,34 @@ const Dashboard = ({ session }) => {
         return completeA - completeB;
       }
 
-      // Tier 4 (Upcoming & Cancelled): The "Daily Block" Sort
       if (tierA === 4) {
-        // 1. Sort by Day First (Ignore time)
         const dateA = new Date(a.start_time).setHours(0, 0, 0, 0);
         const dateB = new Date(b.start_time).setHours(0, 0, 0, 0);
 
         if (dateA !== dateB) {
-          // Earlier date comes first (Today before Tomorrow)
           return dateA - dateB;
         }
 
-        // 2. Same Day? Check Status (Upcoming must be above Cancelled)
         const isCancelledA = a.status === "Cancelled";
         const isCancelledB = b.status === "Cancelled";
 
         if (isCancelledA !== isCancelledB) {
-          // If A is Cancelled (true), it should go AFTER B (false)
-          // false - true = -1 (Upcoming comes first)
-          // true - false = 1  (Cancelled comes last)
           return isCancelledA - isCancelledB;
         }
 
-        // 3. Same Day & Same Status? Sort by Time
         return (
           new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
         );
       }
 
-      // Fallback for Tiers 1 & 2: Sort by Start Time (Soonest First)
       return (
         new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );
     });
   };
 
-  // --- UPDATED FILTER LOGIC ---
   const filteredMaintenances = getSortedMaintenances(
     maintenances.filter((item) => {
-      // 1. VIEW FILTER (Pending vs History)
       let isVisible = false;
       if (view === "pending") {
         if (item.status === "Completed") isVisible = !item.bo_deleted;
@@ -1447,7 +1421,6 @@ const Dashboard = ({ session }) => {
 
       if (!isVisible) return false;
 
-      // 2. SEARCH FILTER (Provider or Redmine)
       if (searchTerm) {
         const lowerTerm = searchTerm.toLowerCase();
         const providerMatch = item.provider.toLowerCase().includes(lowerTerm);
@@ -1457,10 +1430,7 @@ const Dashboard = ({ session }) => {
         if (!providerMatch && !ticketMatch) return false;
       }
 
-      // 3. DATE FILTER (Smart Range & Face Value Fix)
       if (filterDate) {
-        // A. Get User Selection as "YYYY-MM-DD" (Raw Face Value)
-        // We ignore browser timezones and just grab the numbers the user clicked.
         const userSelectedDate = new Date(filterDate);
         const filterStr = [
           userSelectedDate.getFullYear(),
@@ -1468,39 +1438,27 @@ const Dashboard = ({ session }) => {
           String(userSelectedDate.getDate()).padStart(2, "0"),
         ].join("-");
 
-        // B. Get Item Start as "YYYY-MM-DD" (In Shanghai/System Timezone)
         const startZoned = toZonedTime(parseISO(item.start_time), timeZone);
         const startStr = format(startZoned, "yyyy-MM-dd", { timeZone });
 
-        // --- CHECK 1: CANCELLED ITEMS (Strict Match) ---
-        // Cancelled items should only appear on their specific start date.
         if (item.status === "Cancelled") {
           if (startStr !== filterStr) return false;
-        }
-        // --- CHECK 2: ACTIVE / COMPLETED ITEMS (Range Match) ---
-        else {
-          // Calculate the "Effective End Date"
+        } else {
           let endStr = startStr;
 
           if (item.end_time) {
-            // Scenario A: Has a scheduled end time
             const endZoned = toZonedTime(parseISO(item.end_time), timeZone);
             endStr = format(endZoned, "yyyy-MM-dd", { timeZone });
           } else if (item.status === "Completed" && item.completion_time) {
-            // Scenario B: Completed "Until Further Notice" -> Ends at actual completion
             const compZoned = toZonedTime(
               parseISO(item.completion_time),
               timeZone,
             );
             endStr = format(compZoned, "yyyy-MM-dd", { timeZone });
           } else {
-            // Scenario C: Active "Until Further Notice" -> Goes on forever (9999)
-            // If it started before today, it is still active today.
             endStr = "9999-12-31";
           }
 
-          // THE LOGIC: Is the Filter Date inside [Start, End]?
-          // String comparison works perfectly for YYYY-MM-DD format.
           if (filterStr < startStr || filterStr > endStr) {
             return false;
           }
@@ -1529,7 +1487,6 @@ const Dashboard = ({ session }) => {
           onSnooze={handleSnooze}
         />
         <header className="h-14 border-b border-gray-200 flex items-center justify-between px-6 bg-white sticky top-0 z-20">
-          {/* LEFT SIDE: Title & Tabs */}
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-0">
               <div className="bg-gray-900 text-white w-45 h-6 rounded flex items-center justify-center font-bold text-xs">
@@ -1552,9 +1509,7 @@ const Dashboard = ({ session }) => {
             </div>
           </div>
 
-          {/* RIGHT SIDE: Actions */}
           <div className="flex items-center gap-4">
-            {/* Active Users Indicator */}
             <div className="relative group">
               <button className="flex items-center gap-2 px-2 py-1 bg-white border border-gray-100 rounded-full hover:bg-gray-50 transition-colors shadow-sm">
                 <span className="relative flex h-2 w-2">
@@ -1624,7 +1579,6 @@ const Dashboard = ({ session }) => {
               />
             </div>
 
-            {/* PROVIDER MANAGER BUTTON (ADMIN ONLY) */}
             {isHighLevel && (
               <button
                 onClick={() => setIsProviderManagerOpen(true)}
@@ -1635,7 +1589,6 @@ const Dashboard = ({ session }) => {
               </button>
             )}
 
-            {/* --- ARCHIVE BUTTON (VISIBLE TO ALL FOR NOW) --- */}
             {["admin", "leader"].includes(userProfile?.role) && (
               <button
                 onClick={() => setIsArchiveModalOpen(true)}
@@ -1699,9 +1652,7 @@ const Dashboard = ({ session }) => {
           </div>
         </header>
 
-        {/* --- SUB-HEADER: SEARCH & FILTER --- */}
         <div className="px-6 py-3 shrink-0 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between gap-4">
-          {/* Left: Title */}
           <div className="flex items-center gap-3 shrink-0">
             <h2 className="text-lg font-semibold text-gray-800 hidden md:block">
               {view === "pending"
@@ -1713,9 +1664,7 @@ const Dashboard = ({ session }) => {
             </span>
           </div>
 
-          {/* Center/Right: Controls */}
           <div className="flex-1 flex items-center justify-end gap-2 max-w-3xl">
-            {/* 1. SEARCH BAR */}
             <div className="relative group w-full max-w-xs transition-all focus-within:max-w-md">
               <Search
                 className="absolute left-3 top-2 text-gray-400 group-focus-within:text-indigo-500"
@@ -1738,7 +1687,6 @@ const Dashboard = ({ session }) => {
               )}
             </div>
 
-            {/* 2. DATE FILTER DROPDOWN */}
             <div className="relative" ref={filterRef}>
               <button
                 onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
@@ -1763,7 +1711,6 @@ const Dashboard = ({ session }) => {
                 )}
               </button>
 
-              {/* Dropdown Menu */}
               {isFilterMenuOpen && (
                 <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95">
                   <div className="text-[10px] font-bold text-gray-400 uppercase px-2 py-1">
@@ -1798,14 +1745,12 @@ const Dashboard = ({ session }) => {
                       value={filterDate ? dayjs(filterDate) : null}
                       onChange={(val) => {
                         setFilterDate(val ? val.toDate() : null);
-                        // Optional: Comment this out if you want the menu to stay open after selection
                         setIsFilterMenuOpen(false);
                       }}
                       slotProps={{
                         textField: { size: "small", fullWidth: true },
-                        // ⬇️ ADD THIS SECTION ⬇️
                         popper: {
-                          disablePortal: true, // Forces the calendar to stay inside your menu DOM
+                          disablePortal: true,
                         },
                       }}
                     />
@@ -1823,10 +1768,8 @@ const Dashboard = ({ session }) => {
               )}
             </div>
 
-            {/* Separator */}
             <div className="h-6 w-px bg-gray-300 mx-1"></div>
 
-            {/* Connection & Refresh (Existing) */}
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm">
               <span className={`relative flex h-2 w-2`}>
                 {isConnected && (
@@ -1853,7 +1796,6 @@ const Dashboard = ({ session }) => {
           </div>
         </div>
 
-        {/* TABLE WRAPPER */}
         <div className="flex-1 w-full overflow-y-auto overscroll-none">
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200 sticky top-0 z-10">
@@ -1907,9 +1849,37 @@ const Dashboard = ({ session }) => {
                           {item.provider}
                         </div>
                         <div className="text-xs text-gray-500 mt-0.5">
-                          {item.status === "Cancelled"
-                            ? "Cancelled"
-                            : item.type}
+                          {(() => {
+                            if (item.status === "Cancelled") return "Cancelled";
+                            const isPartGame =
+                              item.type?.includes("Part of the Game") ||
+                              !!item.affected_games;
+
+                            let baseText = item.type;
+
+                            if (isPartGame) {
+                              baseText = "Part of the Game";
+                              if (item.type === "Extended Maintenance")
+                                baseText += " - Extended";
+                              else if (item.type?.includes("Urgent"))
+                                baseText += " - Urgent";
+
+                              if (
+                                item.status === "Completed" &&
+                                item.completion_time &&
+                                item.end_time
+                              ) {
+                                const actual = parseISO(item.completion_time);
+                                const planned = parseISO(item.end_time);
+                                if (differenceInMinutes(planned, actual) > 5) {
+                                  baseText += " - Early";
+                                }
+                              }
+                              return baseText;
+                            }
+
+                            return item.type;
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -2093,7 +2063,6 @@ const Dashboard = ({ session }) => {
           </table>
         </div>
 
-        {/* MODALS */}
         <ScheduleModal
           isOpen={isScheduleModalOpen}
           onClose={() => setIsScheduleModalOpen(false)}
@@ -2101,7 +2070,6 @@ const Dashboard = ({ session }) => {
           onOpenEntryModal={handleOpenNewEntry}
           isQC={isQC}
         />
-        {/* UPDATED: Pass providersDB to EntryModal */}
         <EntryModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
@@ -2139,7 +2107,7 @@ const Dashboard = ({ session }) => {
           setEditingUser={setEditingUser}
           newUserCredentials={newUserCredentials}
           setNewUserCredentials={setNewUserCredentials}
-          handleSendResetLink={handleSendResetLink} // <-- ADD THIS NEW PROP
+          handleSendResetLink={handleSendResetLink}
           canManageAdmin={canManageAdmin}
           generatePassword={() => {
             const chars =
@@ -2214,7 +2182,6 @@ const Dashboard = ({ session }) => {
           }}
           loading={loading}
         />
-        {/* NEW: Provider Manager Modal */}
         <ProviderManagerModal
           isOpen={isProviderManagerOpen}
           onClose={() => setIsProviderManagerOpen(false)}

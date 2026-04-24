@@ -25,7 +25,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
-const SHANGHAI_TZ = "Asia/Shanghai"; // <-- Enforcing absolute timezone strictly
+const SHANGHAI_TZ = "Asia/Shanghai";
 
 const ResolutionModal = ({
   isOpen,
@@ -35,30 +35,25 @@ const ResolutionModal = ({
   onComplete,
   loading,
   initialMode = "select",
+  userProfile,
 }) => {
   const [mode, setMode] = useState("select");
   const [extensionType, setExtensionType] = useState("time");
   const [newEndTime, setNewEndTime] = useState(null);
 
-  // Initialize 'now' explicitly in Shanghai time
   const [now, setNow] = useState(dayjs().tz(SHANGHAI_TZ));
 
-  // --- LATE EXTENSION & LOCK LOGIC (Timezone Fixed) ---
   const endTime =
     item && item.end_time ? dayjs(item.end_time).tz(SHANGHAI_TZ) : null;
   const secondsRemaining = endTime ? endTime.diff(now, "second") : 0;
 
-  // Late Extension is triggered if we are within 5 minutes (300 seconds) of the end time, or past it.
   const isLateExtension = endTime ? secondsRemaining <= 300 : false;
-
-  // The UI is locked if it's a Late Extension but we haven't actually reached the end time yet.
   const isWaitingForEndTime = isLateExtension && secondsRemaining > 0;
 
   const isBoWebSop = item
     ? ["BO", "WEB", "BO/WEB"].includes(item.provider)
     : false;
 
-  // NEW: Identify if it is Part of the Game
   const isPartGame = item
     ? item.type && item.type.includes("Part of the Game")
     : false;
@@ -82,13 +77,11 @@ const ResolutionModal = ({
       .isAfter(dayjs(item.start_time).tz(SHANGHAI_TZ));
   };
 
-  // Setup Initial State on Open
   useEffect(() => {
     if (isOpen && item) {
       setMode(initialMode);
       setExtensionType("time");
       setNewEndTime(dayjs(item.end_time).tz(SHANGHAI_TZ).add(1, "hour"));
-      // Reset checks
       setChecklist({
         manualClose: false,
         boUpdate: false,
@@ -100,7 +93,6 @@ const ResolutionModal = ({
     }
   }, [isOpen, item, initialMode]);
 
-  // Real-Time Countdown Timer for Lock Overlay (Strictly Shanghai Time)
   useEffect(() => {
     if (isOpen && mode === "extend") {
       setNow(dayjs().tz(SHANGHAI_TZ));
@@ -120,7 +112,6 @@ const ResolutionModal = ({
     return `${m}:${s}`;
   };
 
-  // --- UPDATED VALIDATION FOR PART OF THE GAME ---
   let requiredKeys = [];
   if (isBoWebSop) {
     requiredKeys = [
@@ -130,7 +121,6 @@ const ResolutionModal = ({
       "redmineUpdate",
     ];
   } else if (isPartGame) {
-    // If it's part of the game, they ONLY need to do BO8.2 and Redmine
     requiredKeys = ["boUpdate", "redmineUpdate"];
   } else {
     requiredKeys = [
@@ -141,7 +131,6 @@ const ResolutionModal = ({
     ];
   }
 
-  // Only require manual close if it's a late extension AND it's not BO/WEB AND it's not Part of Game
   if (isLateExtension && !isPartGame && !isBoWebSop) {
     requiredKeys.push("manualClose");
   }
@@ -151,6 +140,11 @@ const ResolutionModal = ({
   const getManualCloseMsg = () => {
     return `Maintenance for ${item.provider} has been extended. Please help to close the game, Thank You.`;
   };
+
+  const workName = userProfile?.work_name?.split(" ")[0].trim() || "Team";
+  // ONLY USE 'CLOSE' FOR RESOLUTION MODAL
+  const getBOCloseScript = () =>
+    `This is ${workName}, please help to close 【${item.provider}】 via bo.indo368cash.com Thank You`;
 
   const getBoWebExtensionMsg = () => {
     if (extensionType === "notice") {
@@ -168,7 +162,6 @@ const ResolutionModal = ({
   const getAnnouncementBody = () => {
     if (isBoWebSop) return getBoWebExtensionMsg();
 
-    // --- NEW: Part of the Game Formatting for Extensions ---
     if (isPartGame) {
       const games = (item.affected_games || "")
         .split("\n")
@@ -191,11 +184,9 @@ const ResolutionModal = ({
       return baseMsg;
     }
 
-    // Standard formatting
     if (extensionType === "notice") {
       return `Hello there\nPlease be informed that 【${item.provider}】 will extend the maintenance until further notice.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     }
-    // Specific Time Format
     const timeStr = newEndTime?.format("YYYY-MM-DD HH:mm");
     return `Hello there\nPlease be informed that 【${item.provider}】 will extend the maintenance until ${timeStr}(GMT+8).\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
   };
@@ -212,7 +203,7 @@ const ResolutionModal = ({
   };
 
   const toggleCheck = (key) => {
-    if (isWaitingForEndTime) return; // Prevent checking while locked
+    if (isWaitingForEndTime) return;
     setChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -307,7 +298,6 @@ const ResolutionModal = ({
           </h3>
 
           <div className="flex items-center gap-4">
-            {/* Redmine Ticket Display */}
             <div className="bg-white border border-gray-200 px-2 py-1 rounded text-[10px] font-mono font-bold text-gray-500 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
               {item.redmine_ticket ? (
                 <a
@@ -462,9 +452,7 @@ const ResolutionModal = ({
               </div>
               <hr className="border-gray-100" />
 
-              {/* --- MAIN CONTENT GRID (WITH LOCK OVERLAY) --- */}
               <div className="relative rounded-xl">
-                {/* THE LOCK OVERLAY */}
                 {isWaitingForEndTime && (
                   <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl border border-orange-200 shadow-xl animate-in fade-in zoom-in-95 duration-300">
                     <Lock
@@ -499,7 +487,6 @@ const ResolutionModal = ({
                       <span className="text-red-500">*</span>
                     </h5>
                     <div className="space-y-2">
-                      {/* Manual Close only applies if it's late, NOT part of game, and NOT BO/WEB */}
                       {isLateExtension &&
                         !isPartGame &&
                         !isBoWebSop &&
@@ -516,7 +503,6 @@ const ResolutionModal = ({
                           true,
                         )}
 
-                      {/* Dynamic Checklist Rendering */}
                       {isBoWebSop ? (
                         <>
                           {renderStep(
@@ -563,7 +549,6 @@ const ResolutionModal = ({
                           )}
                         </>
                       ) : isPartGame ? (
-                        // --- NEW: SHORTENED SOP FOR PART OF THE GAME ---
                         <>
                           {renderStep(
                             "boUpdate",
@@ -638,25 +623,36 @@ const ResolutionModal = ({
                       <Send size={14} /> Messages to Copy
                     </h5>
 
-                    {/* Only show manual close message if late, not BO/WEB, and not part of game */}
                     {isLateExtension && !isPartGame && !isBoWebSop && (
                       <div className="space-y-1 shrink-0">
                         <label className="text-[10px] font-bold text-red-500 animate-pulse">
                           MANUAL CLOSE MSG (CRITICAL)
                         </label>
-                        <div className="flex gap-2">
-                          <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">
-                            {getManualCloseMsg()}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex gap-2">
+                            <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">
+                              {getManualCloseMsg()}
+                            </div>
+                            <CopyButton
+                              text={getManualCloseMsg()}
+                              label="Teams"
+                              disabled={isWaitingForEndTime}
+                            />
                           </div>
-                          <CopyButton
-                            text={getManualCloseMsg()}
-                            disabled={isWaitingForEndTime}
-                          />
+                          <div className="flex gap-2">
+                            <div className="flex-1 bg-red-50 border border-red-200 rounded p-2 text-xs font-mono text-red-800 truncate">
+                              {getBOCloseScript()}
+                            </div>
+                            <CopyButton
+                              text={getBOCloseScript()}
+                              label="Open/Close"
+                              disabled={isWaitingForEndTime}
+                            />
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* INTERNAL GROUP MSG SECTION (HIDDEN FOR PART OF GAME) */}
                     {!isPartGame && (
                       <div className="space-y-1 shrink-0">
                         <label className="text-[10px] font-bold text-gray-400">
@@ -674,7 +670,6 @@ const ResolutionModal = ({
                       </div>
                     )}
 
-                    {/* REPORT BACK MSG FOR BO/WEB */}
                     {isBoWebSop && (
                       <div className="space-y-1 shrink-0">
                         <label className="text-[10px] font-bold text-gray-400">
@@ -692,7 +687,6 @@ const ResolutionModal = ({
                       </div>
                     )}
 
-                    {/* Expanded Announcement Section (Always shown for BO8.2 / Redmine updates) */}
                     <div className="space-y-1 flex-1 flex flex-col min-h-0">
                       <label className="text-[10px] font-bold text-gray-400 shrink-0">
                         ANNOUNCEMENT BODY

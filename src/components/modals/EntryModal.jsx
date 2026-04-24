@@ -32,6 +32,7 @@ const EntryModal = ({
   setErrors,
   existingMaintenances,
   providersDB = [],
+  userProfile,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -73,7 +74,6 @@ const EntryModal = ({
 
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(formData.provider);
 
-  // --- NEW: Universal Date Formatter for all Scripts ---
   const getTimePhrases = (start, end, isUFN) => {
     if (!start)
       return {
@@ -97,14 +97,12 @@ const EntryModal = ({
     const dEnd = end ? end.format("YYYY-MM-DD") : "??-??";
     const tEnd = end ? end.format("HH:mm") : "??:??";
 
-    // MULTI-DAY CHECK
     if (end && dStart !== dEnd) {
       return {
         title: `from ${dStart} ${tStart} to ${dEnd} ${tEnd}(GMT+8)`,
         body: `from ${dStart} ${tStart} to ${dEnd} ${tEnd}(GMT+8)`,
       };
     } else {
-      // SINGLE-DAY CHECK
       return {
         title: `on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`,
         body: `on ${dStart} between ${tStart} to ${tEnd}(GMT+8)`,
@@ -130,7 +128,6 @@ const EntryModal = ({
       ? `${provider}-part of the game`
       : `${provider}-${gameName}`;
 
-    // Get formatted time strings
     const time = getTimePhrases(startTime, endTime, isUntilFurtherNotice);
 
     let title = "";
@@ -565,6 +562,10 @@ const EntryModal = ({
   const urgentInternalMsg = isPartGame
     ? `Urgent Maintenance: ${formData.provider || "Provider"} - Part of the Game (Lobby Remains Open).`
     : `Urgent Maintenance: ${formData.provider || "Provider"} - Please assist to close the game.`;
+
+  const workName = userProfile?.work_name?.split(" ")[0].trim() || "Team";
+  // ONLY USE 'CLOSE' FOR ENTRY MODAL
+  const boCloseScript = `This is ${workName}, please help to close 【${formData.provider}】 via bo.indo368cash.com Thank You`;
 
   const inputStyle = (isError) =>
     `w-full bg-white border text-gray-900 text-sm rounded-sm px-3 py-2 outline-none transition-all ${isError ? "border-red-500 bg-red-50" : "border-gray-300 focus:border-black"}`;
@@ -1044,7 +1045,6 @@ const EntryModal = ({
             className={`w-1/2 p-6 flex flex-col overflow-y-auto ${isUrgent ? "bg-red-50" : isBoWebSop && !isCancelled ? "bg-[#f4f7fc]" : "bg-gray-50"}`}
           >
             {isUrgent && isBoWebSop ? (
-              // --- NEW: URGENT BO/WEB SOP LAYOUT ---
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-red-200">
                   <div className="flex items-center gap-2">
@@ -1322,7 +1322,19 @@ const EntryModal = ({
                             <div className="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">
                               {urgentInternalMsg}
                             </div>
-                            <CopyButton text={urgentInternalMsg} label="COPY" />
+                            <CopyButton
+                              text={urgentInternalMsg}
+                              label="Teams"
+                            />
+                          </div>
+                          <div className="flex gap-2 mt-1">
+                            <div className="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-[10px] font-mono text-gray-600 truncate select-all">
+                              {boCloseScript}
+                            </div>
+                            <CopyButton
+                              text={boCloseScript}
+                              label="Open/Close"
+                            />
                           </div>
                         </div>
                       </div>

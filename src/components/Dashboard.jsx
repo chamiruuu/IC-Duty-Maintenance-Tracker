@@ -1207,10 +1207,12 @@ const Dashboard = ({ session }) => {
       : `${startStr}, ${startTime} - ${fullEnd}`;
   };
 
-  // --- UPDATED: Badge Logic for "PART OF GAME" ---
+  // --- UPDATED: Simplified Badge Logic for "PART OF GAME" ---
   const getTypeBadge = (item) => {
-    // 1. MUST check Part of the Game first. If it is, return JUST the purple badge.
-    if (item.type?.includes("Part of the Game") || !!item.affected_games) {
+    const isPartGame =
+      item.type?.includes("Part of the Game") || !!item.affected_games;
+
+    if (isPartGame) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
           PART OF GAME
@@ -1848,6 +1850,7 @@ const Dashboard = ({ session }) => {
                         >
                           {item.provider}
                         </div>
+                        {/* --- UPDATED SUBTITLE LOGIC --- */}
                         <div className="text-xs text-gray-500 mt-0.5">
                           {(() => {
                             if (item.status === "Cancelled") return "Cancelled";
@@ -2082,6 +2085,7 @@ const Dashboard = ({ session }) => {
           setErrors={setErrors}
           existingMaintenances={maintenances}
           providersDB={providersList}
+          userProfile={userProfile}
         />
         <CompletionModal
           isOpen={isCompletionModalOpen}
@@ -2090,6 +2094,7 @@ const Dashboard = ({ session }) => {
           item={completingItem}
           sopChecks={sopChecks}
           setSopChecks={setSopChecks}
+          userProfile={userProfile}
         />
         <UserModal
           isOpen={isUserModalOpen}
@@ -2136,6 +2141,7 @@ const Dashboard = ({ session }) => {
           onExtend={handleExtendMaintenance}
           onComplete={handleProceedToCompletion}
           loading={loading}
+          userProfile={userProfile}
         />
         <CancellationModal
           isOpen={isCancellationModalOpen}

@@ -33,6 +33,7 @@ const CompletionModal = ({
   onConfirm,
   sopChecks,
   setSopChecks,
+  userProfile,
 }) => {
   const [completionTime, setCompletionTime] = useState(null);
   const [leaderApproved, setLeaderApproved] = useState(null);
@@ -54,11 +55,9 @@ const CompletionModal = ({
   const isUrgent = item.type && item.type.toLowerCase().includes("urgent");
   const showRobotNotify = isUrgent || item.type === "Extended Maintenance";
 
-  // --- FIXED: Now properly detects "Part of the Game" even if it was extended ---
   const isPartGame =
     item.type?.includes("Part of the Game") || !!item.affected_games;
 
-  // BO/WEB Identifier
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(item.provider);
   const reportBackMsg =
     "Hi Team, please be informed that the merchants have been informed through the SKYPEBOT. Thank You ~!!";
@@ -103,7 +102,6 @@ const CompletionModal = ({
       return `Hello there, \nPlease be informed that 【${item.provider}】 urgent maintenance has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
     }
 
-    // BO/WEB specific copy
     if (isBoWebSop) {
       if (isExtended) {
         return `Hello there\nPlease be informed that 【${item.provider}】 extend maintenance has been completed.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
@@ -112,12 +110,10 @@ const CompletionModal = ({
       }
     }
 
-    // Standard Extended
     if (isExtended) {
       return `Hello there\nPlease be informed that 【${item.provider}】 extend maintenance has been completed.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     }
 
-    // Standard
     return `Hello there, \nPlease be informed that 【${item.provider}】 scheduled maintenance has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
   };
 
@@ -128,7 +124,10 @@ const CompletionModal = ({
     return `maintenance for ${item.provider}, ${reason}. Please help to open. Thank You.`;
   };
 
-  // SCRIPT TO ASK LEADER
+  const workName = userProfile?.work_name?.split(" ")[0].trim() || "Team";
+  const getBOOpenScript = () =>
+    `This is ${workName}, please help to open 【${item.provider}】 via bo.indo368cash.com Thank You`;
+
   const getLeaderConfirmScript = () => {
     return `Hi Team, may we confirm as the maintenance for 【${item.provider}】has been completed, do we need to inform merchant's using the SKYPEBOT or not ? Thank You ~!!`;
   };
@@ -149,13 +148,21 @@ const CompletionModal = ({
   const toggleCheck = (key) =>
     setSopChecks((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const renderCheckItem = (key, title, desc, icon, copyText = null) => {
+  // --- UPDATED: Realigned the layout so buttons are on the SAME LINE as the title ---
+  const renderCheckItem = (key, title, desc, icon, scripts = null) => {
     const isChecked = sopChecks[key];
     const activeColor = isEarly
       ? "border-orange-500 bg-orange-50/50"
       : "border-emerald-500 bg-emerald-50/50";
     const iconBg = isEarly ? "bg-orange-500" : "bg-emerald-500";
     const textColor = isEarly ? "text-orange-900" : "text-emerald-900";
+
+    let scriptArray = [];
+    if (typeof scripts === "string") {
+      scriptArray = [{ text: scripts, label: "COPY" }];
+    } else if (Array.isArray(scripts)) {
+      scriptArray = scripts;
+    }
 
     return (
       <div
@@ -168,27 +175,27 @@ const CompletionModal = ({
           {isChecked ? <Check size={16} strokeWidth={3} /> : icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* THE FIX: justify-between pushes buttons to the right edge of the title line */}
+          <div className="flex items-center justify-between gap-2">
             <span
               className={`text-sm font-bold ${isChecked ? textColor : "text-gray-900"}`}
             >
               {title}
             </span>
-            {copyText && (
+
+            {scriptArray.length > 0 && (
               <div
+                className="flex items-center gap-2 shrink-0"
                 onClick={(e) => e.stopPropagation()}
-                className="opacity-100"
-                title="Copy Message"
               >
-                <CopyButton
-                  text={copyText}
-                  size={14}
-                  className="text-gray-400 hover:text-black bg-white border border-gray-200 p-1 rounded-md shadow-sm"
-                />
+                {scriptArray.map((s, idx) => (
+                  <CopyButton key={idx} text={s.text} label={s.label} />
+                ))}
               </div>
             )}
           </div>
-          <span className="text-xs text-gray-500 mt-0.5 block leading-relaxed">
+
+          <span className="text-xs text-gray-500 mt-1 block leading-relaxed pr-8">
             {desc}
           </span>
         </div>
@@ -196,7 +203,6 @@ const CompletionModal = ({
     );
   };
 
-  // --- VALIDATION LOGIC ---
   let canConfirm = false;
   if (isBoWebSop) {
     const requiredChecks = isUrgent
@@ -213,7 +219,6 @@ const CompletionModal = ({
       ? ["redmineUpdate"]
       : ["boUpdate", "redmineUpdate"];
 
-    // If it's Urgent, we don't care if it's early or not, we MUST do the full checklist without asking leader
     if (isEarly && !isUrgent) {
       if (leaderApproved === "yes") {
         canConfirm = requiredChecks.every((k) => sopChecks[k]);
@@ -252,7 +257,6 @@ const CompletionModal = ({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 flex flex-col max-h-[90vh]">
-        {/* Header */}
         <div
           className={`px-6 py-5 border-b border-gray-200 shrink-0 ${isEarly ? "bg-orange-50" : isUrgent ? "bg-amber-50" : "bg-gray-50"}`}
         >
@@ -309,7 +313,6 @@ const CompletionModal = ({
           </div>
         </div>
 
-        {/* Scrollable Content */}
         <div className="p-6 overflow-y-auto space-y-6">
           <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
             <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
@@ -344,10 +347,8 @@ const CompletionModal = ({
             </h5>
 
             {isBoWebSop ? (
-              // --- BO/WEB CUSTOM CHECKLISTS ---
               <>
                 {isEarly && !isUrgent && (
-                  // LEADER CONFIRMATION (ONLY SHOWN IF EARLY AND NOT URGENT)
                   <div className="mb-5 p-4 bg-white border border-gray-200 rounded-xl shadow-sm space-y-4 animate-in fade-in zoom-in-95">
                     <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                       <div className="flex items-center gap-2">
@@ -408,7 +409,6 @@ const CompletionModal = ({
                   </div>
                 )}
 
-                {/* FULL CHECKLIST (Shown if Not Early OR if Urgent OR if Leader said Yes) */}
                 {(!isEarly || isUrgent || leaderApproved === "yes") && (
                   <>
                     {renderCheckItem(
@@ -447,7 +447,6 @@ const CompletionModal = ({
                   </>
                 )}
 
-                {/* ABBREVIATED CHECKLIST (Shown ONLY if Early AND Not Urgent AND Leader said No) */}
                 {isEarly && !isUrgent && leaderApproved === "no" && (
                   <>
                     {renderCheckItem(
@@ -465,8 +464,7 @@ const CompletionModal = ({
                   </>
                 )}
               </>
-            ) : // --- STANDARD PROVIDER CHECKLISTS ---
-            isEarly ? (
+            ) : isEarly ? (
               <>
                 {!isPartGame &&
                   renderCheckItem(
@@ -474,7 +472,10 @@ const CompletionModal = ({
                     "Manual Game Open (Note 1)",
                     "Contacted personnel & manually opened game.",
                     <PlayCircle size={16} />,
-                    getManualOpenMsg(),
+                    [
+                      { text: getManualOpenMsg(), label: "Teams" },
+                      { text: getBOOpenScript(), label: "Open/Close" },
+                    ],
                   )}
                 {renderCheckItem(
                   "functionalCheck",
@@ -498,7 +499,10 @@ const CompletionModal = ({
                     "Manual Game Open (Note 1)",
                     "Maintenance was extended. Manually open game & confirm.",
                     <PlayCircle size={16} />,
-                    getManualOpenMsg(),
+                    [
+                      { text: getManualOpenMsg(), label: "Teams" },
+                      { text: getBOOpenScript(), label: "Open/Close" },
+                    ],
                   )}
                 {renderCheckItem(
                   "gameTest",
@@ -540,7 +544,6 @@ const CompletionModal = ({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="p-6 bg-gray-50 border-t border-gray-200 flex flex-col gap-4 shrink-0">
           <div className="flex items-center gap-2 text-[10px] text-gray-400 justify-center">
             <Clock size={10} />

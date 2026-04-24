@@ -1341,6 +1341,35 @@ const EntryModal = ({
                     </div>
                   )}
 
+                  {!isPartGame && (
+                    <div
+                      onClick={() =>
+                        setUrgentChecks((prev) => ({
+                          ...prev,
+                          merchant: !prev.merchant,
+                        }))
+                      }
+                      className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.merchant ? "bg-red-50 border-red-300" : "bg-white border-gray-200 hover:border-red-200"}`}
+                    >
+                      <div
+                        className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.merchant ? "bg-red-600 border-red-600" : "border-gray-300 bg-white"}`}
+                      >
+                        {urgentChecks.merchant && (
+                          <Check
+                            size={10}
+                            className="text-white"
+                            strokeWidth={4}
+                          />
+                        )}
+                      </div>
+                      <span
+                        className={`text-xs ${urgentChecks.merchant ? "text-red-900 font-medium" : "text-gray-600"}`}
+                      >
+                        2. Notify Merchants using the <b>BOT</b>
+                      </span>
+                    </div>
+                  )}
+
                   <div
                     onClick={() =>
                       setUrgentChecks((prev) => ({ ...prev, bo82: !prev.bo82 }))
@@ -1367,41 +1396,12 @@ const EntryModal = ({
                         </>
                       ) : (
                         <>
-                          {isPartGame ? "1." : "2."} Create <b>BO 8.2</b> (Do
+                          {isPartGame ? "1." : "3."} Create <b>BO 8.2</b> (Do
                           NOT Sync 8.7)
                         </>
                       )}
                     </span>
                   </div>
-
-                  {!isPartGame && (
-                    <div
-                      onClick={() =>
-                        setUrgentChecks((prev) => ({
-                          ...prev,
-                          merchant: !prev.merchant,
-                        }))
-                      }
-                      className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${urgentChecks.merchant ? "bg-red-50 border-red-300" : "bg-white border-gray-200 hover:border-red-200"}`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-[3px] flex items-center justify-center border transition-colors ${urgentChecks.merchant ? "bg-red-600 border-red-600" : "border-gray-300 bg-white"}`}
-                      >
-                        {urgentChecks.merchant && (
-                          <Check
-                            size={10}
-                            className="text-white"
-                            strokeWidth={4}
-                          />
-                        )}
-                      </div>
-                      <span
-                        className={`text-xs ${urgentChecks.merchant ? "text-red-900 font-medium" : "text-gray-600"}`}
-                      >
-                        3. Notify Merchants using the <b>BOT</b>
-                      </span>
-                    </div>
-                  )}
 
                   <div
                     onClick={() =>

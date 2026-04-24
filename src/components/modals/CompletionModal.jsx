@@ -51,12 +51,21 @@ const CompletionModal = ({
   if (!isOpen || !item) return null;
 
   const isExtended =
-    item.type === "Extended Maintenance" || item.is_until_further_notice;
-  const isUrgent = item.type && item.type.toLowerCase().includes("urgent");
-  const showRobotNotify = isUrgent || item.type === "Extended Maintenance";
-
+    item.type?.includes("Extended Maintenance") || item.is_until_further_notice;
+  const isUrgent = item.type?.toLowerCase().includes("urgent");
   const isPartGame =
     item.type?.includes("Part of the Game") || !!item.affected_games;
+
+  // Hide robot notify if it is an Extended Scheduled Maintenance with a fixed end time
+  const isScheduledExtendedFixed =
+    item.type?.includes("Extended Maintenance") &&
+    !item.is_until_further_notice &&
+    !isUrgent;
+
+  // --- THE FIX: Also hide robot notify if it is an Urgent Part of the Game maintenance ---
+  const showRobotNotify =
+    (isUrgent || (isExtended && !isScheduledExtendedFixed)) &&
+    !(isPartGame && isUrgent);
 
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(item.provider);
   const reportBackMsg =
@@ -148,7 +157,6 @@ const CompletionModal = ({
   const toggleCheck = (key) =>
     setSopChecks((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // --- UPDATED: Realigned the layout so buttons are on the SAME LINE as the title ---
   const renderCheckItem = (key, title, desc, icon, scripts = null) => {
     const isChecked = sopChecks[key];
     const activeColor = isEarly
@@ -175,7 +183,6 @@ const CompletionModal = ({
           {isChecked ? <Check size={16} strokeWidth={3} /> : icon}
         </div>
         <div className="flex-1 min-w-0">
-          {/* THE FIX: justify-between pushes buttons to the right edge of the title line */}
           <div className="flex items-center justify-between gap-2">
             <span
               className={`text-sm font-bold ${isChecked ? textColor : "text-gray-900"}`}

@@ -487,7 +487,7 @@ const Dashboard = ({ session }) => {
           !alertedRef.current.has(alertIdGrace)
         ) {
           // --- UPDATED: DYNAMIC WORDING FOR EXTENDED VS SCHEDULED ---
-          const isExtended = m.type === "Extended Maintenance";
+          const isExtended = m.type?.includes("Extended Maintenance");
           const maintTypeWord = isExtended ? "extended" : "scheduled";
           const notifTitle = isExtended
             ? "Extended Time Reached"
@@ -906,10 +906,18 @@ const Dashboard = ({ session }) => {
 
   const handleExtendMaintenance = async (id, newEndTimeDayJs, isNotice) => {
     setLoading(true);
+
+    // --- NEW LOGIC: PRESERVE URGENT TYPE WHEN EXTENDING ---
+    const targetItem = maintenances.find((m) => m.id === id);
+    const isUrgent = targetItem?.type?.toLowerCase().includes("urgent");
+    const newType = isUrgent
+      ? "Extended Maintenance (Urgent)"
+      : "Extended Maintenance";
+
     const payload = {
       is_until_further_notice: isNotice,
       end_time: isNotice ? null : newEndTimeDayJs.toISOString(),
-      type: "Extended Maintenance",
+      type: newType,
     };
     const { error } = await supabase
       .from("maintenances")
@@ -921,6 +929,7 @@ const Dashboard = ({ session }) => {
       fetchMaintenances();
     }
   };
+
   const handleInitiateCancel = (item) => {
     setCancellingItem(item);
     if (canManageAdmin) setIsCancellationModalOpen(true);
@@ -1009,7 +1018,10 @@ const Dashboard = ({ session }) => {
 
     // --- NEW: Generate Finish Script for Urgent Completion ---
     let finishScript = null;
-    if (completingItem.type === "Urgent") {
+    if (
+      completingItem.type &&
+      completingItem.type.toLowerCase().includes("urgent")
+    ) {
       const scriptData = {
         provider: completingItem.provider,
         startTime: completingItem.start_time,
@@ -1160,7 +1172,10 @@ const Dashboard = ({ session }) => {
       cancellation_pending: isPendingCancel,
       affected_games: formData.affectedGames,
       is_in_house: formData.isInHouse,
+
+      // --- ADD THIS LINE ---
       status: finalStatus,
+      // --------------------
     };
 
     let error;
@@ -1207,12 +1222,8 @@ const Dashboard = ({ session }) => {
       : `${startStr}, ${startTime} - ${fullEnd}`;
   };
 
-  // --- UPDATED: Simplified Badge Logic for "PART OF GAME" ---
   const getTypeBadge = (item) => {
-    const isPartGame =
-      item.type?.includes("Part of the Game") || !!item.affected_games;
-
-    if (isPartGame) {
+    if (item.type?.includes("Part of the Game") || !!item.affected_games) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
           PART OF GAME
@@ -1220,7 +1231,7 @@ const Dashboard = ({ session }) => {
       );
     }
 
-    if (item.type === "Extended Maintenance") {
+    if (item.type?.includes("Extended Maintenance")) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
           EXTENDED
@@ -1228,7 +1239,7 @@ const Dashboard = ({ session }) => {
       );
     }
 
-    if (item.type === "Urgent")
+    if (item.type?.includes("Urgent"))
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
           URGENT
@@ -1850,7 +1861,6 @@ const Dashboard = ({ session }) => {
                         >
                           {item.provider}
                         </div>
-                        {/* --- UPDATED SUBTITLE LOGIC --- */}
                         <div className="text-xs text-gray-500 mt-0.5">
                           {(() => {
                             if (item.status === "Cancelled") return "Cancelled";
@@ -1862,7 +1872,7 @@ const Dashboard = ({ session }) => {
 
                             if (isPartGame) {
                               baseText = "Part of the Game";
-                              if (item.type === "Extended Maintenance")
+                              if (item.type?.includes("Extended Maintenance"))
                                 baseText += " - Extended";
                               else if (item.type?.includes("Urgent"))
                                 baseText += " - Urgent";

@@ -61,6 +61,7 @@ import {
   Search,
   X,
   Archive,
+  BookOpen,
 } from "lucide-react";
 
 import NotificationToast from "./NotificationToast";
@@ -1565,6 +1566,17 @@ const Dashboard = ({ session }) => {
             <span className="hidden md:block text-xs font-medium text-gray-500 animate-in fade-in slide-in-from-top-2">
               {getGreeting()}
             </span>
+
+            {/* NEW MANUAL BUTTON */}
+            <a
+              href="https://www.figma.com/deck/oxrxUCYdVs4w8hRUROWL8U/IC-Duty-Maintenance-Control?node-id=1-284&t=XDr6M6XCr94Rzi4H-1&scaling=min-zoom&content-scaling=fixed&page-id=0%3A1"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors flex items-center justify-center"
+              title="View Manual"
+            >
+              <BookOpen size={18} />
+            </a>
 
             <button
               onClick={() => setIsFeedbackModalOpen(true)}

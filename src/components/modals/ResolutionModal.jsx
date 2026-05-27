@@ -58,6 +58,8 @@ const ResolutionModal = ({
     ? item.type && item.type.includes("Part of the Game")
     : false;
 
+  const isUrgent = item?.type?.toLowerCase().includes("urgent");
+
   const reportBackMsg =
     "Hi Team, please be informed that the merchants have been informed through the SKYPEBOT. Thank You ~!!";
 
@@ -114,24 +116,20 @@ const ResolutionModal = ({
 
   let requiredKeys = [];
   if (isBoWebSop) {
-    requiredKeys = [
-      "internalNotify",
-      "notifyMerchant",
-      "reportBack",
-      "redmineUpdate",
-    ];
+    // Skip internalNotify if urgent
+    requiredKeys = isUrgent
+      ? ["notifyMerchant", "reportBack", "redmineUpdate"]
+      : ["internalNotify", "notifyMerchant", "reportBack", "redmineUpdate"];
   } else if (isPartGame) {
     requiredKeys = ["boUpdate", "redmineUpdate"];
   } else {
-    requiredKeys = [
-      "boUpdate",
-      "internalNotify",
-      "notifyMerchant",
-      "redmineUpdate",
-    ];
+    // Skip internalNotify if urgent
+    requiredKeys = isUrgent
+      ? ["boUpdate", "notifyMerchant", "redmineUpdate"]
+      : ["boUpdate", "internalNotify", "notifyMerchant", "redmineUpdate"];
   }
 
-  if (isLateExtension && !isPartGame && !isBoWebSop) {
+  if (isLateExtension && !isPartGame && !isBoWebSop && !isUrgent) {
     requiredKeys.push("manualClose");
   }
 
@@ -147,11 +145,15 @@ const ResolutionModal = ({
     `This is ${workName}, please help to close 【${item.provider}】 via bo.indo368cash.com Thank You`;
 
   const getBoWebExtensionMsg = () => {
+    const providerName = `【${item.provider}】`;
     if (extensionType === "notice") {
-      return `Hello there\nPlease be informed that 【${item.provider}】will extend the maintenance until further notice\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+      return `Hello there\nPlease be informed that ${providerName} will extend the maintenance until further notice.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
     }
-    const timeStr = newEndTime?.format("YYYY-MM-DD HH:mm");
-    return `Hello there\nPlease be informed that 【${item.provider}】will extend the maintenance until ${timeStr}(GMT+8).\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
+    const isMultiDay = !dayjs(item.start_time).isSame(newEndTime, "day");
+    const timeFormat = isMultiDay ? "YYYY-MM-DD HH:mm" : "HH:mm";
+    const timeStr = newEndTime?.format(`${timeFormat}(GMT+8)`);
+
+    return `Hello there\nPlease be informed that ${providerName} will extend the maintenance until ${timeStr}.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
   };
 
   const getInternalGroupMsg = () => {
@@ -490,6 +492,7 @@ const ResolutionModal = ({
                       {isLateExtension &&
                         !isPartGame &&
                         !isBoWebSop &&
+                        !isUrgent &&
                         renderStep(
                           "manualClose",
                           "!",
@@ -505,18 +508,19 @@ const ResolutionModal = ({
 
                       {isBoWebSop ? (
                         <>
-                          {renderStep(
-                            "internalNotify",
-                            "1",
-                            <>
-                              Send message to <strong>IP Internal Group</strong>
-                              .<br />
-                              (Use copy text on right)
-                            </>,
-                            <Send size={16} />,
-                            false,
-                            getInternalGroupMsg(),
-                          )}
+                          {!isUrgent &&
+                            renderStep(
+                              "internalNotify",
+                              "1",
+                              <>
+                                Send message to <strong>IP Internal Group</strong>.
+                                <br />
+                                (Use copy text on right)
+                              </>,
+                              <Send size={16} />,
+                              false,
+                              getInternalGroupMsg(),
+                            )}
                           {renderStep(
                             "notifyMerchant",
                             "2",
@@ -586,14 +590,18 @@ const ResolutionModal = ({
                                 : 'Update the "Start Content".'}
                             </>,
                           )}
-                          {renderStep(
-                            "internalNotify",
-                            "2",
-                            <>
-                              Notify <strong>IP Internal Group</strong>.<br />
-                              (Use copy text on right)
-                            </>,
-                          )}
+                          {!isUrgent &&
+                            renderStep(
+                              "internalNotify",
+                              isBoWebSop ? "1" : "2",
+                              <>
+                                Send message to <strong>IP Internal Group</strong>.<br />
+                                (Use copy text on right)
+                              </>,
+                              <Send size={16} />,
+                              false,
+                              getInternalGroupMsg(),
+                            )}
                           {renderStep(
                             "notifyMerchant",
                             "3",
@@ -623,7 +631,7 @@ const ResolutionModal = ({
                       <Send size={14} /> Messages to Copy
                     </h5>
 
-                    {isLateExtension && !isPartGame && !isBoWebSop && (
+                    {isLateExtension && !isPartGame && !isBoWebSop && !isUrgent && (
                       <div className="space-y-1 shrink-0">
                         <label className="text-[10px] font-bold text-red-500 animate-pulse">
                           MANUAL CLOSE MSG (CRITICAL)
@@ -653,7 +661,7 @@ const ResolutionModal = ({
                       </div>
                     )}
 
-                    {!isPartGame && (
+                    {!isUrgent && !isPartGame && (
                       <div className="space-y-1 shrink-0">
                         <label className="text-[10px] font-bold text-gray-400">
                           INTERNAL GROUP MSG

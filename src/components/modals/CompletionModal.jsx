@@ -62,10 +62,7 @@ const CompletionModal = ({
     !item.is_until_further_notice &&
     !isUrgent;
 
-  // --- THE FIX: Also hide robot notify if it is an Urgent Part of the Game maintenance ---
-  const showRobotNotify =
-    (isUrgent || (isExtended && !isScheduledExtendedFixed)) &&
-    !(isPartGame && isUrgent);
+  const needsManualOpen = isUrgent || (!isPartGame && isExtended);
 
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(item.provider);
   const reportBackMsg =
@@ -84,6 +81,13 @@ const CompletionModal = ({
 
   const isEarly = minutesDifference > 5;
   const totalEarlyMinutes = isEarly ? minutesDifference : 0;
+  const skipMerchantBotNotify = !!item.end_time && !item.is_until_further_notice;
+
+  // --- THE FIX: Also hide robot notify if it is an Urgent Part of the Game maintenance ---
+  const showRobotNotify =
+    !skipMerchantBotNotify &&
+    (isUrgent || (isExtended && !isScheduledExtendedFixed)) &&
+    !(isPartGame && isUrgent);
 
   const getFormattedEarlyTime = () => {
     if (totalEarlyMinutes < 60) return `${totalEarlyMinutes} mins`;
@@ -213,17 +217,27 @@ const CompletionModal = ({
   let canConfirm = false;
   if (isBoWebSop) {
     const requiredChecks = isUrgent
-      ? ["internalGroup", "merchantNotify", "reportBack", "redmineUpdate"]
-      : [
-          "internalGroup",
-          "merchantNotify",
-          "reportBack",
-          "boUpdate",
-          "redmineUpdate",
-        ];
+      ? skipMerchantBotNotify
+        ? ["manualOpen", "internalGroup", "reportBack", "redmineUpdate"]
+        : [
+            "manualOpen",
+            "internalGroup",
+            "merchantNotify",
+            "reportBack",
+            "redmineUpdate",
+          ]
+      : skipMerchantBotNotify
+        ? ["internalGroup", "reportBack", "boUpdate", "redmineUpdate"]
+        : [
+            "internalGroup",
+            "merchantNotify",
+            "reportBack",
+            "boUpdate",
+            "redmineUpdate",
+          ];
 
     const noLeaderChecks = isUrgent
-      ? ["redmineUpdate"]
+      ? ["manualOpen", "redmineUpdate"]
       : ["boUpdate", "redmineUpdate"];
 
     if (isEarly && !isUrgent) {
@@ -237,27 +251,16 @@ const CompletionModal = ({
     }
   } else {
     if (isEarly) {
-      if (isPartGame) {
-        canConfirm = sopChecks.functionalCheck && sopChecks.announcements;
-      } else {
-        canConfirm =
-          sopChecks.manualOpen &&
-          sopChecks.functionalCheck &&
-          sopChecks.announcements;
-      }
+      canConfirm =
+        (!needsManualOpen || sopChecks.manualOpen) &&
+        sopChecks.functionalCheck &&
+        sopChecks.announcements;
     } else {
-      if (isPartGame) {
-        canConfirm =
-          sopChecks.gameTest &&
-          sopChecks.documentation &&
-          (!showRobotNotify || sopChecks.robotNotify);
-      } else {
-        canConfirm =
-          sopChecks.gameTest &&
-          sopChecks.documentation &&
-          (!showRobotNotify || sopChecks.robotNotify) &&
-          (!isExtended || sopChecks.manualOpen);
-      }
+      canConfirm =
+        (!needsManualOpen || sopChecks.manualOpen) &&
+        sopChecks.gameTest &&
+        sopChecks.documentation &&
+        (!showRobotNotify || sopChecks.robotNotify);
     }
   }
 
@@ -418,22 +421,42 @@ const CompletionModal = ({
 
                 {(!isEarly || isUrgent || leaderApproved === "yes") && (
                   <>
+                    {isUrgent &&
+                      renderCheckItem(
+                        "manualOpen",
+                        "1. Manual Game Open",
+                        "Urgent maintenance is done. Manually open the game before confirming completion.",
+                        <PlayCircle size={16} />,
+                        [
+                          { text: getManualOpenMsg(), label: "Teams" },
+                          { text: getBOOpenScript(), label: "Open/Close" },
+                        ],
+                      )}
                     {renderCheckItem(
                       "internalGroup",
-                      "1. Internal Group Msg",
+                      isUrgent
+                        ? "2. Internal Group Msg"
+                        : "1. Internal Group Msg",
                       "Send completion message to IP Internal Group",
                       <Send size={16} />,
                       getFinishContent(),
                     )}
-                    {renderCheckItem(
-                      "merchantNotify",
-                      "2. Notify Merchants",
-                      "Via robot BO [IC-Main Group Announcement(No Stag)]",
-                      <Users size={16} />,
-                    )}
+                    {!skipMerchantBotNotify &&
+                      renderCheckItem(
+                        "merchantNotify",
+                        isUrgent ? "3. Notify Merchants" : "2. Notify Merchants",
+                        "Via robot BO [IC-Main Group Announcement(No Stag)]",
+                        <Users size={16} />,
+                      )}
                     {renderCheckItem(
                       "reportBack",
-                      "3. Report Back",
+                      isUrgent
+                        ? skipMerchantBotNotify
+                          ? "3. Report Back"
+                          : "4. Report Back"
+                        : skipMerchantBotNotify
+                          ? "2. Report Back"
+                          : "3. Report Back",
                       "Report to IP internal group",
                       <CheckSquare size={16} />,
                       reportBackMsg,
@@ -441,13 +464,19 @@ const CompletionModal = ({
                     {!isUrgent &&
                       renderCheckItem(
                         "boUpdate",
-                        "4. Update BO8.2",
+                        skipMerchantBotNotify ? "3. Update BO8.2" : "4. Update BO8.2",
                         "Update BO8.2 Finish Content",
                         <FileText size={16} />,
                       )}
                     {renderCheckItem(
                       "redmineUpdate",
-                      isUrgent ? "4. Update Redmine" : "5. Update Redmine",
+                      isUrgent
+                        ? skipMerchantBotNotify
+                          ? "4. Update Redmine"
+                          : "5. Update Redmine"
+                        : skipMerchantBotNotify
+                          ? "4. Update Redmine"
+                          : "5. Update Redmine",
                       "Update Redmine with finish content",
                       <Activity size={16} />,
                     )}
@@ -471,40 +500,15 @@ const CompletionModal = ({
                   </>
                 )}
               </>
-            ) : isEarly ? (
-              <>
-                {!isPartGame &&
-                  renderCheckItem(
-                    "manualOpen",
-                    "Manual Game Open (Note 1)",
-                    "Contacted personnel & manually opened game.",
-                    <PlayCircle size={16} />,
-                    [
-                      { text: getManualOpenMsg(), label: "Teams" },
-                      { text: getBOOpenScript(), label: "Open/Close" },
-                    ],
-                  )}
-                {renderCheckItem(
-                  "functionalCheck",
-                  "Functional Check",
-                  "Confirmed game is open & transfers are working normally.",
-                  <ShieldCheck size={16} />,
-                )}
-                {renderCheckItem(
-                  "announcements",
-                  "Update Announcements (Note 4)",
-                  "Updated BO8.2 (End Announcement) & Redmine.",
-                  <FileText size={16} />,
-                )}
-              </>
             ) : (
               <>
-                {!isPartGame &&
-                  isExtended &&
+                {needsManualOpen &&
                   renderCheckItem(
                     "manualOpen",
-                    "Manual Game Open (Note 1)",
-                    "Maintenance was extended. Manually open game & confirm.",
+                    isUrgent ? "1. Manual Game Open" : "Manual Game Open (Note 1)",
+                    isUrgent
+                      ? "Urgent maintenance is done. Manually open the game before confirming completion."
+                      : "Maintenance was extended. Manually open game & confirm.",
                     <PlayCircle size={16} />,
                     [
                       { text: getManualOpenMsg(), label: "Teams" },
@@ -513,7 +517,7 @@ const CompletionModal = ({
                   )}
                 {renderCheckItem(
                   "gameTest",
-                  "Game & Transfer Test",
+                  needsManualOpen ? "2. Game & Transfer Test" : "Game & Transfer Test",
                   isPartGame
                     ? "Game was not closed. Confirmed transfers working."
                     : "Manual open successful. Game loading & transfers normal on WEB.",
@@ -522,13 +526,13 @@ const CompletionModal = ({
                 {showRobotNotify &&
                   renderCheckItem(
                     "robotNotify",
-                    "Notify Merchants (Robot BO)",
+                    needsManualOpen ? "3. Notify Merchants (Robot BO)" : "Notify Merchants (Robot BO)",
                     'Send "Maintenance Completed" announcement to 【IC-Maintenance&Promo】 group.',
                     <Users size={16} />,
                   )}
                 {renderCheckItem(
                   "documentation",
-                  "Update BO8.2 & Redmine",
+                  needsManualOpen ? "4. Update BO8.2 & Redmine" : "Update BO8.2 & Redmine",
                   isUrgent
                     ? 'Add "Completed" to BO title. Update Redmine. Assign to Carmen.'
                     : 'Add "Completed" to BO title. Update Redmine & Schedule.',

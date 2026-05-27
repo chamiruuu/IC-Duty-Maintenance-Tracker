@@ -62,8 +62,6 @@ const CompletionModal = ({
     !item.is_until_further_notice &&
     !isUrgent;
 
-  const needsManualOpen = isUrgent || (!isPartGame && isExtended);
-
   const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(item.provider);
   const reportBackMsg =
     "Hi Team, please be informed that the merchants have been informed through the SKYPEBOT. Thank You ~!!";
@@ -81,15 +79,18 @@ const CompletionModal = ({
 
   const isEarly = minutesDifference > 5;
   const totalEarlyMinutes = isEarly ? minutesDifference : 0;
-  const skipMerchantBotNotify = !!item.end_time && !item.is_until_further_notice;
-  const isPartGameUntilNotice = isPartGame && item.is_until_further_notice;
+  const skipMerchantBotNotify =
+    !!item.end_time && !item.is_until_further_notice;
 
   // --- THE FIX: Also hide robot notify if it is an Urgent Part of the Game maintenance ---
   const showRobotNotify =
     !skipMerchantBotNotify &&
     (isUrgent || (isExtended && !isScheduledExtendedFixed)) &&
-    !(isPartGame && isUrgent) &&
-    !isPartGameUntilNotice;
+    !(isPartGame && isUrgent);
+
+  // Added isEarly so early completion of standard schedules also triggers the manual open requirement
+  const needsManualOpen =
+    isUrgent || (!isPartGame && isExtended) || (!isPartGame && isEarly);
 
   const getFormattedEarlyTime = () => {
     if (totalEarlyMinutes < 60) return `${totalEarlyMinutes} mins`;
@@ -252,18 +253,12 @@ const CompletionModal = ({
       canConfirm = requiredChecks.every((k) => sopChecks[k]);
     }
   } else {
-    if (isEarly) {
-      canConfirm =
-        (!needsManualOpen || sopChecks.manualOpen) &&
-        sopChecks.functionalCheck &&
-        sopChecks.announcements;
-    } else {
-      canConfirm =
-        (!needsManualOpen || sopChecks.manualOpen) &&
-        sopChecks.gameTest &&
-        sopChecks.documentation &&
-        (!showRobotNotify || sopChecks.robotNotify);
-    }
+    // Replaced the buggy functionalCheck/announcements with the actual rendered checklist
+    canConfirm =
+      (!needsManualOpen || sopChecks.manualOpen) &&
+      sopChecks.gameTest &&
+      sopChecks.documentation &&
+      (!showRobotNotify || sopChecks.robotNotify);
   }
 
   return (
@@ -446,7 +441,9 @@ const CompletionModal = ({
                     {!skipMerchantBotNotify &&
                       renderCheckItem(
                         "merchantNotify",
-                        isUrgent ? "3. Notify Merchants" : "2. Notify Merchants",
+                        isUrgent
+                          ? "3. Notify Merchants"
+                          : "2. Notify Merchants",
                         "Via robot BO [IC-Main Group Announcement(No Stag)]",
                         <Users size={16} />,
                       )}
@@ -466,7 +463,9 @@ const CompletionModal = ({
                     {!isUrgent &&
                       renderCheckItem(
                         "boUpdate",
-                        skipMerchantBotNotify ? "3. Update BO8.2" : "4. Update BO8.2",
+                        skipMerchantBotNotify
+                          ? "3. Update BO8.2"
+                          : "4. Update BO8.2",
                         "Update BO8.2 Finish Content",
                         <FileText size={16} />,
                       )}
@@ -507,10 +506,16 @@ const CompletionModal = ({
                 {needsManualOpen &&
                   renderCheckItem(
                     "manualOpen",
-                    isUrgent ? "1. Manual Game Open" : "Manual Game Open (Note 1)",
+                    isUrgent
+                      ? "1. Manual Game Open"
+                      : isEarly
+                        ? "1. Contact Personnel to Open Game"
+                        : "Manual Game Open (Note 1)",
                     isUrgent
                       ? "Urgent maintenance is done. Manually open the game before confirming completion."
-                      : "Maintenance was extended. Manually open game & confirm.",
+                      : isEarly
+                        ? "Completed early. Manually open the game before confirming completion."
+                        : "Maintenance was extended. Manually open game & confirm.",
                     <PlayCircle size={16} />,
                     [
                       { text: getManualOpenMsg(), label: "Teams" },
@@ -519,7 +524,9 @@ const CompletionModal = ({
                   )}
                 {renderCheckItem(
                   "gameTest",
-                  needsManualOpen ? "2. Game & Transfer Test" : "Game & Transfer Test",
+                  needsManualOpen
+                    ? "2. Game & Transfer Test"
+                    : "Game & Transfer Test",
                   isPartGame
                     ? "Game was not closed. Confirmed transfers working."
                     : "Manual open successful. Game loading & transfers normal on WEB.",
@@ -528,13 +535,17 @@ const CompletionModal = ({
                 {showRobotNotify &&
                   renderCheckItem(
                     "robotNotify",
-                    needsManualOpen ? "3. Notify Merchants (Robot BO)" : "Notify Merchants (Robot BO)",
+                    needsManualOpen
+                      ? "3. Notify Merchants (Robot BO)"
+                      : "Notify Merchants (Robot BO)",
                     'Send "Maintenance Completed" announcement to 【IC-Maintenance&Promo】 group.',
                     <Users size={16} />,
                   )}
                 {renderCheckItem(
                   "documentation",
-                  needsManualOpen ? "4. Update BO8.2 & Redmine" : "Update BO8.2 & Redmine",
+                  needsManualOpen
+                    ? "4. Update BO8.2 & Redmine"
+                    : "Update BO8.2 & Redmine",
                   isUrgent
                     ? 'Add "Completed" to BO title. Update Redmine. Assign to Carmen.'
                     : 'Add "Completed" to BO title. Update Redmine & Schedule.',

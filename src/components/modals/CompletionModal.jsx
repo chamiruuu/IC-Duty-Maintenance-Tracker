@@ -82,12 +82,14 @@ const CompletionModal = ({
   const isEarly = minutesDifference > 5;
   const totalEarlyMinutes = isEarly ? minutesDifference : 0;
   const skipMerchantBotNotify = !!item.end_time && !item.is_until_further_notice;
+  const isPartGameUntilNotice = isPartGame && item.is_until_further_notice;
 
   // --- THE FIX: Also hide robot notify if it is an Urgent Part of the Game maintenance ---
   const showRobotNotify =
     !skipMerchantBotNotify &&
     (isUrgent || (isExtended && !isScheduledExtendedFixed)) &&
-    !(isPartGame && isUrgent);
+    !(isPartGame && isUrgent) &&
+    !isPartGameUntilNotice;
 
   const getFormattedEarlyTime = () => {
     if (totalEarlyMinutes < 60) return `${totalEarlyMinutes} mins`;

@@ -20,6 +20,8 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import CopyButton from "../CopyButton";
+import BotCopyReminder from "../BotCopyReminder";
+import { formatBotScript } from "../../lib/botScriptFormatter";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -218,6 +220,11 @@ const ResolutionModal = ({
     copyText = null,
   ) => {
     const isChecked = checklist[key];
+    const copyItems = Array.isArray(copyText)
+      ? copyText
+      : copyText
+        ? [{ text: copyText, label: "COPY" }]
+        : [];
     const baseBorder = isCritical
       ? "border-red-100 hover:border-red-300"
       : "border-gray-100 hover:border-blue-200";
@@ -262,18 +269,20 @@ const ResolutionModal = ({
             <span className="text-xs leading-relaxed font-medium block">
               {text}
             </span>
-            {copyText && (
+            {copyItems.length > 0 && (
               <div
+                className="flex items-center gap-2"
                 onClick={(e) => {
                   e.stopPropagation();
                 }}
                 title="Copy Message"
               >
-                <CopyButton
-                  text={copyText}
-                  size={14}
-                  className="text-gray-400 hover:text-black bg-white border border-gray-200 p-1 rounded-md shadow-sm"
-                />
+                {copyItems.map((item, idx) => (
+                  <React.Fragment key={idx}>
+                    <CopyButton text={item.text} label={item.label} />
+                    {item.label === "BOT COPY" && <BotCopyReminder />}
+                  </React.Fragment>
+                ))}
               </div>
             )}
           </div>
@@ -532,6 +541,13 @@ const ResolutionModal = ({
                               </strong>
                             </>,
                             <Users size={16} />,
+                            false,
+                            [
+                              {
+                                text: formatBotScript(getAnnouncementBody()),
+                                label: "BOT COPY",
+                              },
+                            ],
                           )}
                           {renderStep(
                             "reportBack",
@@ -612,6 +628,14 @@ const ResolutionModal = ({
                                 【IC-Maintenance&Promo of providers】
                               </strong>
                             </>,
+                            null,
+                            false,
+                            [
+                              {
+                                text: formatBotScript(getAnnouncementBody()),
+                                label: "BOT COPY",
+                              },
+                            ],
                           )}
                           {renderStep(
                             "redmineUpdate",

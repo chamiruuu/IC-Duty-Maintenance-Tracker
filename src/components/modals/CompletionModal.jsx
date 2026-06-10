@@ -20,6 +20,8 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import CopyButton from "../CopyButton";
+import BotCopyReminder from "../BotCopyReminder";
+import { formatBotScript } from "../../lib/botScriptFormatter";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -203,7 +205,10 @@ const CompletionModal = ({
                 onClick={(e) => e.stopPropagation()}
               >
                 {scriptArray.map((s, idx) => (
-                  <CopyButton key={idx} text={s.text} label={s.label} />
+                  <React.Fragment key={idx}>
+                    <CopyButton text={s.text} label={s.label} />
+                    {s.label === "BOT COPY" && <BotCopyReminder />}
+                  </React.Fragment>
                 ))}
               </div>
             )}
@@ -446,6 +451,12 @@ const CompletionModal = ({
                           : "2. Notify Merchants",
                         "Via robot BO [IC-Main Group Announcement(No Stag)]",
                         <Users size={16} />,
+                        [
+                          {
+                            text: formatBotScript(getFinishContent()),
+                            label: "BOT COPY",
+                          },
+                        ],
                       )}
                     {renderCheckItem(
                       "reportBack",
@@ -540,6 +551,12 @@ const CompletionModal = ({
                       : "Notify Merchants (Robot BO)",
                     'Send "Maintenance Completed" announcement to 【IC-Maintenance&Promo】 group.',
                     <Users size={16} />,
+                    [
+                      {
+                        text: formatBotScript(getFinishContent()),
+                        label: "BOT COPY",
+                      },
+                    ],
                   )}
                 {renderCheckItem(
                   "documentation",

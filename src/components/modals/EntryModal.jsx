@@ -12,10 +12,12 @@ import {
   Info,
 } from "lucide-react";
 import CopyButton from "../CopyButton";
+import BotCopyReminder from "../BotCopyReminder";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { generateUrgentScript } from "../../lib/scriptGenerator";
+import { formatBotScript } from "../../lib/botScriptFormatter";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -1142,14 +1144,26 @@ const EntryModal = ({
                       "STEP 2"
                     )}
                   </div>
-                  <p
-                    className={`text-xs font-semibold mt-2 transition-colors ${urgentBoWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
+                  <div
+                    className={`mt-2 flex items-start justify-between gap-2 transition-colors ${urgentBoWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
                   >
-                    Notify merchants via robot BO:{" "}
-                    <span className="font-bold text-red-700">
-                      [IC-Main Announcement(No Stag)]
-                    </span>
-                  </p>
+                    <p className="text-xs font-semibold">
+                      Notify merchants via robot BO:{" "}
+                      <span className="font-bold text-red-700">
+                        [IC-Main Announcement(No Stag)]
+                      </span>
+                    </p>
+                    <div
+                      className="flex flex-shrink-0 items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <CopyButton
+                        text={formatBotScript(urgentBoWebData.scriptMsg)}
+                        label="BOT COPY"
+                      />
+                      <BotCopyReminder />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Step 3 */}
@@ -1410,6 +1424,16 @@ const EntryModal = ({
                       >
                         3. Notify Merchants using the <b>BOT</b>
                       </span>
+                      <div
+                        className="ml-auto flex flex-shrink-0 items-center gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <CopyButton
+                          text={formatBotScript(urgentScript.startMessage)}
+                          label="BOT COPY"
+                        />
+                        <BotCopyReminder />
+                      </div>
                     </div>
                   )}
 
@@ -1457,11 +1481,18 @@ const EntryModal = ({
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <div className="flex justify-between items-end">
+                  <div className="flex justify-between items-end gap-2">
                     <label className="text-[10px] font-bold text-red-400">
                       ANNOUNCEMENT (Robot, Redmine, BO8.2)
                     </label>
-                    <CopyButton text={urgentScript.startMessage} />
+                    <div className="flex items-center gap-2">
+                      <CopyButton text={urgentScript.startMessage} />
+                      <CopyButton
+                        text={formatBotScript(urgentScript.startMessage)}
+                        label="BOT COPY"
+                      />
+                      <BotCopyReminder />
+                    </div>
                   </div>
                   <div className="bg-white border border-red-200 rounded p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap shadow-sm min-h-[120px]">
                     {urgentScript.startMessage || (
@@ -1555,14 +1586,26 @@ const EntryModal = ({
                       "STEP 2"
                     )}
                   </div>
-                  <p
-                    className={`text-xs font-semibold mt-2 transition-colors ${boWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
+                  <div
+                    className={`mt-2 flex items-start justify-between gap-2 transition-colors ${boWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
                   >
-                    Notify the merchants via robot's BO using{" "}
-                    <span className="font-bold text-blue-700">
-                      [IC-Main Group Announcement(NO stag)]
-                    </span>
-                  </p>
+                    <p className="text-xs font-semibold">
+                      Notify the merchants via robot's BO using{" "}
+                      <span className="font-bold text-blue-700">
+                        [IC-Main Group Announcement(NO stag)]
+                      </span>
+                    </p>
+                    <div
+                      className="flex flex-shrink-0 items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <CopyButton
+                        text={formatBotScript(boWebData.scriptMsg)}
+                        label="BOT COPY"
+                      />
+                      <BotCopyReminder />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Step 3 */}
@@ -1712,11 +1755,13 @@ const EntryModal = ({
                 </div>
 
                 <div className="group relative flex-1 min-h-0 flex flex-col">
-                  <div className="flex justify-between items-end mb-1">
+                  <div className="flex justify-between items-end mb-1 gap-2">
                     <label className="text-[10px] font-semibold text-gray-400">
                       BODY
                     </label>
-                    <CopyButton text={generateScheduledScript("body")} />
+                    <div className="flex items-center gap-2">
+                      <CopyButton text={generateScheduledScript("body")} />
+                    </div>
                   </div>
                   <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap flex-1 overflow-y-auto">
                     {generateScheduledScript("body")}

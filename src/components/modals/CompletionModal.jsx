@@ -57,6 +57,11 @@ const CompletionModal = ({
   const isUrgent = item.type?.toLowerCase().includes("urgent");
   const isPartGame =
     item.type?.includes("Part of the Game") || !!item.affected_games;
+  const isScheduledUntilNotice =
+    item.is_until_further_notice &&
+    !isUrgent &&
+    !isPartGame &&
+    !item.type?.includes("Extended Maintenance");
 
   // Hide robot notify if it is an Extended Scheduled Maintenance with a fixed end time
   const isScheduledExtendedFixed =
@@ -82,7 +87,8 @@ const CompletionModal = ({
   const isEarly = minutesDifference > 5;
   const totalEarlyMinutes = isEarly ? minutesDifference : 0;
   const skipMerchantBotNotify =
-    !!item.end_time && !item.is_until_further_notice;
+    (!!item.end_time && !item.is_until_further_notice) ||
+    isScheduledUntilNotice;
 
   // --- THE FIX: Also hide robot notify if it is an Urgent Part of the Game maintenance ---
   const showRobotNotify =
@@ -121,11 +127,19 @@ const CompletionModal = ({
     }
 
     if (isBoWebSop) {
+      if (isScheduledUntilNotice) {
+        return `Hello there, \nPlease be informed that 【${item.provider}】 scheduled maintenance has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
+      }
+
       if (isExtended) {
         return `Hello there\nPlease be informed that 【${item.provider}】 extend maintenance has been completed.\nPlease contact us if you require further assistance.\nThank you for your cooperation and patience.`;
       } else {
         return `Hello there, \nPlease be informed that 【${item.provider}】 scheduled maintenance has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
       }
+    }
+
+    if (isScheduledUntilNotice) {
+      return `Hello there, \nPlease be informed that 【${item.provider}】 scheduled maintenance has been completed\nPlease contact us if you require further assistance.\nThank you for your support and cooperation.`;
     }
 
     if (isExtended) {
@@ -561,7 +575,9 @@ const CompletionModal = ({
                 {renderCheckItem(
                   "documentation",
                   needsManualOpen
-                    ? "4. Update BO8.2 & Redmine"
+                    ? showRobotNotify
+                      ? "4. Update BO8.2 & Redmine"
+                      : "3. Update BO8.2 & Redmine"
                     : "Update BO8.2 & Redmine",
                   isUrgent
                     ? 'Add "Completed" to BO title. Update Redmine. Assign to Carmen.'

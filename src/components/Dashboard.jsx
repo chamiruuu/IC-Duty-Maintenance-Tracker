@@ -1029,25 +1029,36 @@ const Dashboard = ({ session }) => {
       ? actualCompletionTime.toISOString()
       : new Date().toISOString();
     const completerName = userProfile.work_name || "User";
+    const isScheduledUntilNotice =
+      completingItem.is_until_further_notice &&
+      !completingItem.type?.toLowerCase().includes("urgent") &&
+      !completingItem.type?.includes("Part of the Game") &&
+      !completingItem.affected_games &&
+      !completingItem.type?.includes("Extended Maintenance");
+    const completionUpdate = {
+      status: "Completed",
+      completion_time: finalTimeISO,
+      completed_by: completerName,
+      ...(isScheduledUntilNotice
+        ? {
+            end_time: finalTimeISO,
+            is_until_further_notice: false,
+          }
+        : {}),
+    };
     setMaintenances((prev) =>
       prev.map((m) =>
         m.id === completingItem.id
           ? {
               ...m,
-              status: "Completed",
-              completion_time: finalTimeISO,
-              completed_by: completerName,
+              ...completionUpdate,
             }
           : m,
       ),
     );
     await supabase
       .from("maintenances")
-      .update({
-        status: "Completed",
-        completion_time: finalTimeISO,
-        completed_by: completerName,
-      })
+      .update(completionUpdate)
       .eq("id", completingItem.id);
     setIsCompletionModalOpen(false);
     setCompletingItem(null);

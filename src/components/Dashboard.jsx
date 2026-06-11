@@ -83,6 +83,8 @@ import { generateUrgentScript } from "../lib/scriptGenerator";
 import ArchiveManagerModal from "./modals/ArchiveManagerModal";
 
 const REDMINE_BASE_URL = "https://bugtracking.ickwbase.com/issues/";
+const QC_PLUS_ROLE = "QC+";
+const LEGACY_QC_PLUS_ROLE = "qc_leader";
 
 const playNotificationSound = () => {
   try {
@@ -106,9 +108,18 @@ const Dashboard = ({ session }) => {
   });
 
   // --- NEW ROLE LOGIC ---
-  const isQC = userProfile?.role === "qc";
-  const canManageAdmin = ["admin", "leader"].includes(userProfile?.role);
-  const isHighLevel = ["admin", "leader", "qc"].includes(userProfile?.role);
+  const userRole = userProfile?.role;
+  const isQCViewOnly = userRole === "qc";
+  const canEditMaintenance = !isQCViewOnly;
+  const canManageAdmin = ["admin", "leader"].includes(userRole);
+  const canManageQCPermissions = userRole === "admin";
+  const isHighLevel = [
+    "admin",
+    "leader",
+    "qc",
+    QC_PLUS_ROLE,
+    LEGACY_QC_PLUS_ROLE,
+  ].includes(userRole);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDate, setFilterDate] = useState(null); // null = All Dates
@@ -785,6 +796,18 @@ const Dashboard = ({ session }) => {
     }
   };
   const handleUpdateUser = async (userId, updates) => {
+    const isGrantingQCPlus =
+      updates.role === QC_PLUS_ROLE || updates.role === LEGACY_QC_PLUS_ROLE;
+
+    if (isGrantingQCPlus && !canManageQCPermissions) {
+      triggerNotification(
+        "Access Denied",
+        "Only admins can grant QC+ permission.",
+        "error",
+      );
+      return;
+    }
+
     const { error } = await supabase
       .from("profiles")
       .update(updates)
@@ -857,6 +880,8 @@ const Dashboard = ({ session }) => {
   };
 
   const handleInitiateDelete = (item) => {
+    if (!canEditMaintenance) return;
+
     if (canManageAdmin) {
       setDeletingId(item.id);
       setIsDeleteModalOpen(true);
@@ -906,6 +931,8 @@ const Dashboard = ({ session }) => {
   };
 
   const handleExtendMaintenance = async (id, newEndTimeDayJs, isNotice) => {
+    if (!canEditMaintenance) return;
+
     setLoading(true);
 
     // --- NEW LOGIC: PRESERVE URGENT TYPE WHEN EXTENDING ---
@@ -932,6 +959,8 @@ const Dashboard = ({ session }) => {
   };
 
   const handleInitiateCancel = (item) => {
+    if (!canEditMaintenance) return;
+
     setCancellingItem(item);
     if (canManageAdmin) setIsCancellationModalOpen(true);
     else setIsCancelRequestModalOpen(true);
@@ -961,6 +990,8 @@ const Dashboard = ({ session }) => {
     }
   };
   const handleOpenResolution = (item, mode = "select") => {
+    if (!canEditMaintenance) return;
+
     setResolvingItem(item);
     setResolutionInitialMode(mode);
     setIsResolutionModalOpen(true);
@@ -971,6 +1002,8 @@ const Dashboard = ({ session }) => {
   };
 
   const initiateCompletion = (item) => {
+    if (!canEditMaintenance) return;
+
     if (item.status === "Completed" || item.status === "Cancelled") {
       if (item.status === "Completed" && !item.bo_deleted) return;
       if (canManageAdmin) {
@@ -990,6 +1023,8 @@ const Dashboard = ({ session }) => {
   };
 
   const confirmCompletion = async (actualCompletionTime) => {
+    if (!canEditMaintenance) return;
+
     const finalTimeISO = actualCompletionTime
       ? actualCompletionTime.toISOString()
       : new Date().toISOString();
@@ -1041,6 +1076,8 @@ const Dashboard = ({ session }) => {
   };
 
   const handleConfirmBODeleted = (item) => {
+    if (!canEditMaintenance) return;
+
     setActionConfig({
       type: "CONFIRM_BO_DELETE",
       title: "Confirm BO 8.2 Cleanup",
@@ -1088,6 +1125,8 @@ const Dashboard = ({ session }) => {
   };
 
   const handleOpenNewEntry = (prefillProvider = null, prefillDate = null) => {
+    if (!canEditMaintenance) return;
+
     setEditingId(null);
     setErrors({});
     let startTime = dayjs().tz("Asia/Shanghai");
@@ -1113,6 +1152,8 @@ const Dashboard = ({ session }) => {
   };
 
   const handleEdit = (item) => {
+    if (!canEditMaintenance) return;
+
     setEditingId(item.id);
     const fullLink = item.redmine_ticket
       ? `${REDMINE_BASE_URL}${item.redmine_ticket}`
@@ -1144,6 +1185,15 @@ const Dashboard = ({ session }) => {
   };
 
   const handleConfirm = async (zonedStartTime, zonedEndTime) => {
+    if (!canEditMaintenance) {
+      triggerNotification(
+        "Access Denied",
+        "Your QC role is currently view only.",
+        "error",
+      );
+      return;
+    }
+
     setLoading(true);
     const digitsOnly = formData.redmineLink
       ? formData.redmineLink.replace(/\D/g, "")
@@ -1328,8 +1378,8 @@ const Dashboard = ({ session }) => {
     if (end && now > end)
       return (
         <button
-          onClick={() => !isQC && handleOpenResolution(item)}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-pulse ${!isQC ? "hover:bg-red-100 transition-colors" : "cursor-default"}`}
+          onClick={() => canEditMaintenance && handleOpenResolution(item)}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-pulse ${canEditMaintenance ? "hover:bg-red-100 transition-colors" : "cursor-default"}`}
         >
           <AlertTriangle size={12} /> Action Required
         </button>
@@ -1665,7 +1715,7 @@ const Dashboard = ({ session }) => {
                 <Calendar size={14} /> Schedule
               </button>
 
-              {!isQC && (
+              {canEditMaintenance && (
                 <button
                   onClick={() => handleOpenNewEntry()}
                   className="bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2"
@@ -1963,7 +2013,7 @@ const Dashboard = ({ session }) => {
                       </button>
                     ) : (
                       item.status !== "Cancelled" &&
-                      !isQC && (
+                      canEditMaintenance && (
                         <button
                           onClick={() => initiateCompletion(item)}
                           className="transition-colors p-1.5 rounded-md text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 border border-transparent hover:border-emerald-200"
@@ -1990,7 +2040,7 @@ const Dashboard = ({ session }) => {
                       </button>
                     ) : (
                       item.status === "Completed" &&
-                      !isQC &&
+                      canEditMaintenance &&
                       (isBOCleanupEnabled(item.completion_time) ? (
                         <button
                           onClick={() => handleConfirmBODeleted(item)}
@@ -2017,7 +2067,7 @@ const Dashboard = ({ session }) => {
                   </td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex justify-end gap-2 items-center">
-                      {!isQC ? (
+                      {canEditMaintenance ? (
                         <>
                           <button
                             onClick={() => handleOpenResolution(item, "extend")}
@@ -2093,7 +2143,7 @@ const Dashboard = ({ session }) => {
           onClose={() => setIsScheduleModalOpen(false)}
           maintenances={maintenances}
           onOpenEntryModal={handleOpenNewEntry}
-          isQC={isQC}
+          canEditMaintenance={canEditMaintenance}
         />
         <EntryModal
           isOpen={isModalOpen}
@@ -2136,6 +2186,7 @@ const Dashboard = ({ session }) => {
           setNewUserCredentials={setNewUserCredentials}
           handleSendResetLink={handleSendResetLink}
           canManageAdmin={canManageAdmin}
+          canManageQCPermissions={canManageQCPermissions}
           generatePassword={() => {
             const chars =
               "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";

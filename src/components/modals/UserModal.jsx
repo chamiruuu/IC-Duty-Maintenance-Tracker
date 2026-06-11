@@ -14,8 +14,13 @@ import {
   AlertTriangle,
   Trash2,
   Key,
+  ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 import CopyButton from "../CopyButton";
+
+const QC_PLUS_ROLE = "QC+";
+const LEGACY_QC_PLUS_ROLE = "qc_leader";
 
 const UserModal = ({
   isOpen,
@@ -35,6 +40,7 @@ const UserModal = ({
   setNewUserCredentials,
   handleSendResetLink, // <-- ADD IT HERE
   canManageAdmin, // <-- ADDED PROP
+  canManageQCPermissions,
 }) => {
   const [generatedPass, setGeneratedPass] = useState("");
   const [showPasswords, setShowPasswords] = useState({});
@@ -63,6 +69,67 @@ const UserModal = ({
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email || "");
   const isFormValid =
     isEmailValid && userForm.workName?.trim() && userForm.password?.trim();
+
+  const isQCPlusRole = (role) =>
+    role === QC_PLUS_ROLE || role === LEGACY_QC_PLUS_ROLE;
+  const isQCRole = (role) => role === "qc" || isQCPlusRole(role);
+  const getRoleLabel = (role) => {
+    if (isQCPlusRole(role)) return "QC+";
+    if (role === "qc") return "qc";
+    return role;
+  };
+
+  const toggleQCPermission = (user) => {
+    const nextRole = isQCPlusRole(user.role) ? "qc" : QC_PLUS_ROLE;
+    handleUpdateUser(user.id, { role: nextRole });
+  };
+
+  const getRoleBadgeClass = (role) => {
+    if (role === "admin") return "bg-black text-white";
+    if (role === "leader") return "bg-indigo-600 text-white";
+    if (isQCPlusRole(role)) return "bg-emerald-100 text-emerald-700";
+    if (role === "qc") return "bg-amber-100 text-amber-700";
+    return "bg-gray-100 text-gray-600";
+  };
+
+  const renderRoleBadge = (role) => (
+    <span
+      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getRoleBadgeClass(role)}`}
+    >
+      {getRoleLabel(role)}
+    </span>
+  );
+
+  const renderQCPermissionToggle = (user) => {
+    if (!canManageQCPermissions || !isQCRole(user.role)) return null;
+
+    const hasEditAccess = isQCPlusRole(user.role);
+
+    return (
+      <button
+        onClick={() => toggleQCPermission(user)}
+        aria-label={hasEditAccess ? "QC+ permission granted" : "Grant QC+ permission"}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold transition-colors ${
+          hasEditAccess
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+            : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+        }`}
+        title={
+          hasEditAccess
+            ? "Click to make QC view only"
+            : "Click to allow QC editing"
+        }
+      >
+        {hasEditAccess ? (
+          <ShieldCheck size={11} />
+        ) : (
+          <>
+            <ShieldOff size={11} /> Grant QC+
+          </>
+        )}
+      </button>
+    );
+  };
 
   const confirmDelete = () => {
     if (deleteConfirmation) {
@@ -118,11 +185,11 @@ const UserModal = ({
       )}
 
       {/* --- MAIN USER MODAL --- */}
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-        <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[85vh]">
           {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
-            <div className="flex items-center gap-3">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide flex items-center gap-2">
                 <Users size={16} /> User Management
               </h2>
@@ -146,7 +213,7 @@ const UserModal = ({
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-black"
+              className="absolute right-4 top-4 sm:static text-gray-400 hover:text-black"
             >
               <X size={18} />
             </button>
@@ -154,7 +221,7 @@ const UserModal = ({
 
           {/* --- CREATE TAB --- */}
           {userTab === "create" && canManageAdmin ? (
-            <div className="p-8 max-w-md mx-auto w-full overflow-y-auto">
+            <div className="p-4 sm:p-8 max-w-md mx-auto w-full overflow-y-auto">
               {newUserCredentials ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center animate-in zoom-in-95 duration-300">
                   <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -305,8 +372,8 @@ const UserModal = ({
             </div>
           ) : (
             // --- LIST TAB ---
-            <div className="flex-1 overflow-y-auto p-0">
-              <table className="w-full text-left text-sm">
+            <div className="flex-1 overflow-y-auto p-3 md:p-0">
+              <table className="hidden md:table w-full text-left text-sm">
                 <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-3 text-xs uppercase tracking-wide">
@@ -379,7 +446,7 @@ const UserModal = ({
                         {editingUser === u.id ? (
                           <select
                             className="border border-gray-300 rounded px-2 py-1 text-xs"
-                            defaultValue={u.role}
+                            value={isQCPlusRole(u.role) ? QC_PLUS_ROLE : u.role}
                             onChange={(e) =>
                               handleUpdateUser(u.id, { role: e.target.value })
                             }
@@ -389,21 +456,18 @@ const UserModal = ({
                             <option value="admin">Admin</option>
                             {/* ADD QC OPTION TO EDIT LIST */}
                             <option value="qc">QC (View Only)</option>
+                            <option
+                              value={QC_PLUS_ROLE}
+                              disabled={!canManageQCPermissions}
+                            >
+                              QC+
+                            </option>
                           </select>
                         ) : (
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              u.role === "admin"
-                                ? "bg-black text-white"
-                                : u.role === "leader"
-                                  ? "bg-indigo-600 text-white"
-                                  : u.role === "qc"
-                                    ? "bg-amber-100 text-amber-700"
-                                    : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
-                            {u.role}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {renderRoleBadge(u.role)}
+                            {renderQCPermissionToggle(u)}
+                          </div>
                         )}
                       </td>
                       {/* ONLY RENDER ACTIONS IF USER IS ADMIN/LEADER */}
@@ -439,6 +503,113 @@ const UserModal = ({
                   ))}
                 </tbody>
               </table>
+
+              <div className="space-y-3 md:hidden">
+                {userList.map((u) => (
+                  <div
+                    key={u.id}
+                    className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        {editingUser === u.id ? (
+                          <input
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-sm font-medium"
+                            defaultValue={u.work_name}
+                            onBlur={(e) =>
+                              handleUpdateUser(u.id, {
+                                work_name: e.target.value,
+                              })
+                            }
+                          />
+                        ) : (
+                          <div className="font-semibold text-gray-900 truncate">
+                            {u.work_name}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500 truncate mt-0.5">
+                          {u.email}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {editingUser === u.id ? (
+                          <select
+                            className="border border-gray-300 rounded px-2 py-1 text-xs"
+                            value={isQCPlusRole(u.role) ? QC_PLUS_ROLE : u.role}
+                            onChange={(e) =>
+                              handleUpdateUser(u.id, { role: e.target.value })
+                            }
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="leader">Leader</option>
+                            <option value="admin">Admin</option>
+                            <option value="qc">QC (View Only)</option>
+                            <option
+                              value={QC_PLUS_ROLE}
+                              disabled={!canManageQCPermissions}
+                            >
+                              QC+
+                            </option>
+                          </select>
+                        ) : (
+                          <>
+                            {renderRoleBadge(u.role)}
+                            {renderQCPermissionToggle(u)}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-2 rounded bg-gray-50 px-3 py-2">
+                      <span className="font-mono text-xs text-gray-700 truncate">
+                        {showPasswords[u.id]
+                          ? u.visible_password || "******"
+                          : "********"}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => togglePasswordVisibility(u.id)}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {showPasswords[u.id] ? (
+                            <EyeOff size={14} />
+                          ) : (
+                            <Eye size={14} />
+                          )}
+                        </button>
+                        <CopyButton text={u.visible_password || ""} label="" />
+                      </div>
+                    </div>
+
+                    {canManageAdmin && (
+                      <div className="mt-3 flex items-center justify-end gap-3 border-t border-gray-100 pt-3">
+                        <button
+                          onClick={() =>
+                            setEditingUser(editingUser === u.id ? null : u.id)
+                          }
+                          className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                        >
+                          {editingUser === u.id ? "Done" : "Edit"}
+                        </button>
+                        <button
+                          onClick={() => handleSendResetLink(u.email)}
+                          className="text-gray-400 hover:text-indigo-600 transition-colors"
+                          title="Send Password Reset Email"
+                        >
+                          <Key size={14} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmation(u)}
+                          className="text-gray-300 hover:text-red-600 transition-colors"
+                          title="Delete User"
+                        >
+                          <UserMinus size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

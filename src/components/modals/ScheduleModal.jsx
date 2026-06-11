@@ -11,8 +11,6 @@ import {
 import {
   format,
   addDays,
-  startOfWeek,
-  isSameDay,
   isToday as checkIsToday,
 } from "date-fns";
 import { getChecklistForDate } from "../../lib/scheduleRules";
@@ -24,7 +22,7 @@ const ScheduleModal = ({
   onClose,
   maintenances,
   onOpenEntryModal,
-  isQC,
+  canEditMaintenance,
 }) => {
   if (!isOpen) return null;
 
@@ -161,7 +159,7 @@ const ScheduleModal = ({
                             {/* Bottom Line: Action Button OR Redmine Link */}
                             <div>
                               {item.status === "missing" ? (
-                                !isQC ? (
+                                canEditMaintenance ? (
                                   <button
                                     onClick={() =>
                                       onOpenEntryModal(item.provider, date)

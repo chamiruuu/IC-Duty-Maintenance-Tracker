@@ -35,6 +35,7 @@ const EntryModal = ({
   existingMaintenances,
   providersDB = [],
   userProfile,
+  activeProject, // Ensure this is received
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -74,7 +75,9 @@ const EntryModal = ({
   const [initialTimes, setInitialTimes] = useState({ start: null, end: null });
   const [wasTimeChanged, setWasTimeChanged] = useState(false);
 
-  const isBoWebSop = ["BO", "WEB", "BO/WEB"].includes(formData.provider);
+  const isPkq = activeProject === "PKQ";
+  const isBoWebSop =
+    !isPkq && ["BO", "WEB", "BO/WEB"].includes(formData.provider);
 
   const getTimePhrases = (start, end, isUFN) => {
     if (!start)
@@ -167,6 +170,7 @@ const EntryModal = ({
   const isUrgentLocked =
     isUrgent &&
     !isBoWebSop &&
+    !isPkq &&
     ((!isPartGame && !urgentChecks.contact) ||
       !urgentChecks.bo82 ||
       (!isPartGame && !urgentChecks.merchant) ||
@@ -186,9 +190,9 @@ const EntryModal = ({
   useEffect(() => {
     if (isUrgent) {
       if (isPartGame) setUrgentScript(generatePartGameScript(true));
-      else setUrgentScript(generateUrgentScript(formData));
+      else setUrgentScript(generateUrgentScript(formData, activeProject));
     }
-  }, [formData, isPartGame, isUrgent]);
+  }, [formData, isPartGame, isUrgent, activeProject]);
 
   useEffect(() => {
     if (isOpen) {
@@ -369,7 +373,7 @@ const EntryModal = ({
     if (
       isUrgentLocked ||
       (isBoWebSop && !isUrgent && isBoWebLocked) ||
-      (isBoWebSop && isUrgent && isUrgentBoWebLocked)
+      (isBoWebSop && isUrgent && !isCancelled && isUrgentBoWebLocked)
     )
       return;
 
@@ -380,7 +384,7 @@ const EntryModal = ({
       newErrors.provider = true;
       hasError = true;
     }
-    if (!isCancelled && !formData.redmineLink) {
+    if (!isCancelled && !isPkq && !formData.redmineLink) {
       newErrors.redmineLink = true;
       hasError = true;
     }
@@ -411,31 +415,50 @@ const EntryModal = ({
       hasError = true;
     }
 
-    // --- UPDATED DUPLICATE PROVIDER LOGIC ---
+    // --- UPDATED TIME OVERLAP LOGIC ---
     if (existingMaintenances && !hasError && !editingId) {
-      const formDay = dayjs(formData.startTime)
-        .tz("Asia/Shanghai")
-        .format("YYYY-MM-DD");
       const newTicket = formData.redmineLink
         ? formData.redmineLink.replace(/\D/g, "")
         : "";
-      const otherMaintenances = existingMaintenances.filter(
-        (m) => m.id !== editingId,
-      );
+
+      // 1. Filter out the current edit item AND strictly match the active project
+      const otherMaintenances = existingMaintenances.filter((m) => {
+        if (m.id === editingId) return false;
+        const mProject = (m.project || "IP").toUpperCase();
+        const currentProject = (activeProject || "IP").toUpperCase();
+        return mProject === currentProject;
+      });
+
+      // 2. Convert form times to absolute Epoch milliseconds (Bypasses all timezone bugs)
+      const fStartStr = dayjs(formData.startTime).format("YYYY-MM-DD HH:mm:ss");
+      const fStartEpoch = dayjs.tz(fStartStr, "Asia/Shanghai").valueOf();
+
+      let fEndEpoch = null;
+      if (!formData.isUntilFurtherNotice && formData.endTime) {
+        const fEndStr = dayjs(formData.endTime).format("YYYY-MM-DD HH:mm:ss");
+        fEndEpoch = dayjs.tz(fEndStr, "Asia/Shanghai").valueOf();
+      }
 
       const duplicateProvider = otherMaintenances.some((m) => {
-        const mDay = dayjs(m.start_time)
-          .tz("Asia/Shanghai")
-          .format("YYYY-MM-DD");
+        // Skip different providers
+        if (m.provider !== formData.provider) return false;
 
-        if (m.provider !== formData.provider || mDay !== formDay) return false;
+        // STRICT FIX: Completely ignore Cancelled entries!
+        if (m.status === "Cancelled" || m.type === "Cancelled") return false;
 
-        // If either the existing maintenance or the new one is "Part of the Game", we allow it to coexist.
-        const existingIsPartGame =
-          m.type?.includes("Part of the Game") || !!m.affected_games;
+        // "Part of the Game" is allowed to coexist
+        const existingIsPartGame = m.type?.includes("Part of the Game") || !!m.affected_games;
         if (existingIsPartGame || isPartGame) return false;
 
-        return true;
+        // DB values are already absolute UTC ISO strings, convert to Epoch milliseconds
+        const mStartEpoch = dayjs(m.start_time).valueOf();
+        const mEndEpoch = m.is_until_further_notice || !m.end_time ? null : dayjs(m.end_time).valueOf();
+
+        // Overlap formula: (NewStart < OldEnd) AND (OldStart < NewEnd)
+        const newStartsBeforeOldEnds = mEndEpoch === null ? true : fStartEpoch < mEndEpoch;
+        const oldStartsBeforeNewEnds = fEndEpoch === null ? true : mStartEpoch < fEndEpoch;
+
+        return newStartsBeforeOldEnds && oldStartsBeforeNewEnds;
       });
 
       if (duplicateProvider && !isUrgent) {
@@ -443,11 +466,15 @@ const EntryModal = ({
         hasError = true;
       }
 
-      if (!isCancelled && newTicket.length > 0) {
+      if (!isCancelled && !isPkq && newTicket.length > 0) {
         const duplicateTicket = otherMaintenances.some((m) => {
-          const mTicket = m.redmine_ticket ? m.redmine_ticket.toString() : "";
+          // Ignore cancelled entries for Redmine checks so you can reuse tickets
+          if (m.status === "Cancelled" || m.type === "Cancelled") return false;
+          
+          const mTicket = m.redmine_ticket ? m.redmine_ticket.toString().replace(/\D/g, "") : "";
           return mTicket === newTicket;
         });
+        
         if (duplicateTicket) {
           newErrors.redmineDuplicate = true;
           hasError = true;
@@ -643,7 +670,7 @@ const EntryModal = ({
                 </label>
                 {errors.providerDuplicate && (
                   <span className="text-[10px] text-red-600 font-bold flex items-center gap-1">
-                    <AlertCircle size={10} /> Already exists
+                    <AlertCircle size={10} /> Time overlap exists
                   </span>
                 )}
                 {errors.providerInvalid && (
@@ -657,8 +684,10 @@ const EntryModal = ({
                   type="text"
                   className={`${inputStyle(errors.provider || errors.providerDuplicate || errors.providerInvalid)} pr-8`}
                   placeholder="Search or Select Provider..."
-                  value={searchTerm}
+                  disabled={isPkq}
+                  value={isPkq ? "PokerQ" : searchTerm}
                   onChange={(e) => {
+                    if (isPkq) return;
                     setSearchTerm(e.target.value);
                     setFormData({ ...formData, provider: e.target.value });
                     if (!isDropdownOpen) setIsDropdownOpen(true);
@@ -743,7 +772,7 @@ const EntryModal = ({
               </div>
             )}
 
-            {!isCancelled && (
+            {!isCancelled && !isPkq && (
               <div>
                 <div className="flex justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-gray-500">
@@ -1055,7 +1084,46 @@ const EntryModal = ({
           <div
             className={`w-1/2 p-6 flex flex-col overflow-y-auto ${isUrgent ? "bg-red-50" : isBoWebSop && !isCancelled ? "bg-[#f4f7fc]" : "bg-gray-50"}`}
           >
-            {isUrgent && isBoWebSop ? (
+            {isPkq ? (
+              <div className="flex flex-col gap-4 h-full">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    PKQ Project Mode
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded">
+                    PokerQ Locked
+                  </span>
+                </div>
+
+                <div className="group relative">
+                  <div className="flex justify-between items-end mb-1">
+                    <label className="text-[10px] font-semibold text-gray-400">
+                      TITLE
+                    </label>
+                    <CopyButton text={generateScheduledScript("title")} />
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 break-words min-h-[3rem] max-h-20 overflow-y-auto">
+                    {generateScheduledScript("title")}
+                  </div>
+                </div>
+
+                <div className="group relative flex-1 min-h-0 flex flex-col">
+                  <div className="flex justify-between items-end mb-1">
+                    <label className="text-[10px] font-semibold text-gray-400">
+                      BODY
+                    </label>
+                    <CopyButton text={generateScheduledScript("body")} />
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap flex-1 overflow-y-auto">
+                    {generateScheduledScript("body")}
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-gray-500 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                  Redmine and BO 8.2 steps are disabled for PKQ entries.
+                </div>
+              </div>
+            ) : isUrgent && isBoWebSop ? (
               // --- NEW: URGENT BO/WEB SOP LAYOUT ---
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-red-200">
@@ -1144,26 +1212,14 @@ const EntryModal = ({
                       "STEP 2"
                     )}
                   </div>
-                  <div
-                    className={`mt-2 flex items-start justify-between gap-2 transition-colors ${urgentBoWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
+                  <p
+                    className={`text-xs font-semibold mt-2 transition-colors ${urgentBoWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
                   >
-                    <p className="text-xs font-semibold">
-                      Notify merchants via robot BO:{" "}
-                      <span className="font-bold text-red-700">
-                        [IC-Main Announcement(No Stag)]
-                      </span>
-                    </p>
-                    <div
-                      className="flex flex-shrink-0 items-center gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <CopyButton
-                        text={formatBotScript(urgentBoWebData.scriptMsg)}
-                        label="BOT COPY"
-                      />
-                      <BotCopyReminder />
-                    </div>
-                  </div>
+                    Notify merchants via robot BO:{" "}
+                    <span className="font-bold text-red-700">
+                      [IC-Main Announcement(No Stag)]
+                    </span>
+                  </p>
                 </div>
 
                 {/* Step 3 */}
@@ -1424,16 +1480,6 @@ const EntryModal = ({
                       >
                         3. Notify Merchants using the <b>BOT</b>
                       </span>
-                      <div
-                        className="ml-auto flex flex-shrink-0 items-center gap-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <CopyButton
-                          text={formatBotScript(urgentScript.startMessage)}
-                          label="BOT COPY"
-                        />
-                        <BotCopyReminder />
-                      </div>
                     </div>
                   )}
 
@@ -1481,18 +1527,11 @@ const EntryModal = ({
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <div className="flex justify-between items-end gap-2">
+                  <div className="flex justify-between items-end">
                     <label className="text-[10px] font-bold text-red-400">
                       ANNOUNCEMENT (Robot, Redmine, BO8.2)
                     </label>
-                    <div className="flex items-center gap-2">
-                      <CopyButton text={urgentScript.startMessage} />
-                      <CopyButton
-                        text={formatBotScript(urgentScript.startMessage)}
-                        label="BOT COPY"
-                      />
-                      <BotCopyReminder />
-                    </div>
+                    <CopyButton text={urgentScript.startMessage} />
                   </div>
                   <div className="bg-white border border-red-200 rounded p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap shadow-sm min-h-[120px]">
                     {urgentScript.startMessage || (
@@ -1586,26 +1625,14 @@ const EntryModal = ({
                       "STEP 2"
                     )}
                   </div>
-                  <div
-                    className={`mt-2 flex items-start justify-between gap-2 transition-colors ${boWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
+                  <p
+                    className={`text-xs font-semibold mt-2 transition-colors ${boWebChecks.step2 ? "text-emerald-900" : "text-gray-700"}`}
                   >
-                    <p className="text-xs font-semibold">
-                      Notify the merchants via robot's BO using{" "}
-                      <span className="font-bold text-blue-700">
-                        [IC-Main Group Announcement(NO stag)]
-                      </span>
-                    </p>
-                    <div
-                      className="flex flex-shrink-0 items-center gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <CopyButton
-                        text={formatBotScript(boWebData.scriptMsg)}
-                        label="BOT COPY"
-                      />
-                      <BotCopyReminder />
-                    </div>
-                  </div>
+                    Notify the merchants via robot's BO using{" "}
+                    <span className="font-bold text-blue-700">
+                      [IC-Main Group Announcement(NO stag)]
+                    </span>
+                  </p>
                 </div>
 
                 {/* Step 3 */}
@@ -1755,13 +1782,11 @@ const EntryModal = ({
                 </div>
 
                 <div className="group relative flex-1 min-h-0 flex flex-col">
-                  <div className="flex justify-between items-end mb-1 gap-2">
+                  <div className="flex justify-between items-end mb-1">
                     <label className="text-[10px] font-semibold text-gray-400">
                       BODY
                     </label>
-                    <div className="flex items-center gap-2">
-                      <CopyButton text={generateScheduledScript("body")} />
-                    </div>
+                    <CopyButton text={generateScheduledScript("body")} />
                   </div>
                   <div className="bg-white border border-gray-200 rounded-sm p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap flex-1 overflow-y-auto">
                     {generateScheduledScript("body")}

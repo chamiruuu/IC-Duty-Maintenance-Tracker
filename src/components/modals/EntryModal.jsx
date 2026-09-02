@@ -1558,15 +1558,19 @@ const EntryModal = ({
                 <div className="space-y-1">
                   <div className="flex justify-between items-end gap-2">
                     <label className="text-[10px] font-bold text-red-400">
-                      ANNOUNCEMENT (Robot, Redmine, BO8.2)
+                      {isPartGame ? "ANNOUNCEMENT (Redmine, BO8.2)" : "ANNOUNCEMENT (Robot, Redmine, BO8.2)"}
                     </label>
                     <div className="flex items-center gap-2">
                       <CopyButton text={urgentScript.startMessage} />
-                      <CopyButton
-                        text={formatBotScript(urgentScript.startMessage)}
-                        label="BOT COPY"
-                      />
-                      <BotCopyReminder />
+                      {!isPartGame && (
+                        <>
+                          <CopyButton
+                            text={formatBotScript(urgentScript.startMessage)}
+                            label="BOT COPY"
+                          />
+                          <BotCopyReminder />
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="bg-white border border-red-200 rounded p-3 text-xs font-mono text-gray-800 whitespace-pre-wrap shadow-sm min-h-[120px]">

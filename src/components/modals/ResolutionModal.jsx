@@ -50,8 +50,7 @@ const ResolutionModal = ({
   const secondsRemaining = endTime ? endTime.diff(now, "second") : 0;
 
   const isLateExtension = endTime ? secondsRemaining <= 300 : false;
-  const isWaitingForEndTime = isLateExtension && secondsRemaining > 0;
-
+  
   const isBoWebSop = item
     ? ["BO", "WEB", "BO/WEB"].includes(item.provider)
     : false;
@@ -61,6 +60,10 @@ const ResolutionModal = ({
     : false;
 
   const isUrgent = item?.type?.toLowerCase().includes("urgent");
+  const isPkq = item?.project === "PKQ";
+
+  // --- THE FIX: Bypasses the 5-minute wait lock for Urgent and PKQ entries ---
+  const isWaitingForEndTime = isLateExtension && secondsRemaining > 0 && !isUrgent && !isPkq;
 
   const reportBackMsg =
     "Hi Team, please be informed that the merchants have been informed through the SKYPEBOT. Thank You ~!!";
@@ -117,7 +120,9 @@ const ResolutionModal = ({
   };
 
   let requiredKeys = [];
-  if (isBoWebSop) {
+  if (isPkq) {
+    requiredKeys = ["internalNotify"];
+  } else if (isBoWebSop) {
     // Skip internalNotify if urgent
     requiredKeys = isUrgent
       ? ["notifyMerchant", "reportBack", "redmineUpdate"]
@@ -131,7 +136,7 @@ const ResolutionModal = ({
       : ["boUpdate", "internalNotify", "notifyMerchant", "redmineUpdate"];
   }
 
-  if (isLateExtension && !isPartGame && !isBoWebSop && !isUrgent) {
+  if (isLateExtension && !isPartGame && !isBoWebSop && !isUrgent && !isPkq) {
     requiredKeys.push("manualClose");
   }
 
@@ -146,6 +151,25 @@ const ResolutionModal = ({
   const getBOCloseScript = () =>
     `This is ${workName}, please help to close 【${item.provider}】 via bo.indo368cash.com Thank You`;
 
+  const getPkqExtensionMsg = () => {
+    if (isPartGame) {
+      const games = (item.affected_games || "").split("\n").filter((g) => g.trim());
+      const gameName = games[0] ? games[0].trim() : "Game Name";
+      const subject = `【PokerQ-${gameName}】`;
+      if (extensionType === "notice") {
+        return `Hi ALL,\nGood Day!\nPlease be informed that ${subject} scheduled to have urgent maintenance until further notice, during the period, other games can be able to access and the game lobby will not close. Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+      }
+      const timeStr = newEndTime?.format("MMM DD, YYYY HH:mm");
+      return `Hi ALL,\nGood Day!\nPlease be informed that ${subject} scheduled to have urgent maintenance until ${timeStr} (GMT+8), during the period, other games can be able to access and the game lobby will not close. Please contact us if you require further assistance.\nThank you for your support and cooperation.`;
+    }
+
+    if (extensionType === "notice") {
+      return `Hi ALL,\nGood Day!\nPlease be informed that PokerQ will have extend maintenance procedure until further notice.\nAll related services will be temporarily unavailable.\nPlease bear with us for the inconvenience of the improvement of our service. Thank you.\nKindly please send us a message on our Teams or email to us if you have any enquiry`;
+    }
+    const timeStr = newEndTime?.format("HH:mm");
+    return `Hi ALL,\nGood Day!\nPlease be informed that PokerQ will have extend maintenance procedure until ${timeStr}(GMT+8) / further notice.\nAll related services will be temporarily unavailable.\nPlease bear with us for the inconvenience of the improvement of our service. Thank you.\nKindly please send us a message on our Teams or email to us if you have any enquiry`;
+  };
+
   const getBoWebExtensionMsg = () => {
     const providerName = `【${item.provider}】`;
     if (extensionType === "notice") {
@@ -159,11 +183,13 @@ const ResolutionModal = ({
   };
 
   const getInternalGroupMsg = () => {
+    if (isPkq) return getPkqExtensionMsg();
     if (isBoWebSop) return getBoWebExtensionMsg();
     return `${item.provider} maintenance time extended. BO8.2 announcement has been updated.`;
   };
 
   const getAnnouncementBody = () => {
+    if (isPkq) return getPkqExtensionMsg();
     if (isBoWebSop) return getBoWebExtensionMsg();
 
     if (isPartGame) {
@@ -502,6 +528,7 @@ const ResolutionModal = ({
                         !isPartGame &&
                         !isBoWebSop &&
                         !isUrgent &&
+                        !isPkq &&
                         renderStep(
                           "manualClose",
                           "!",
@@ -515,7 +542,22 @@ const ResolutionModal = ({
                           true,
                         )}
 
-                      {isBoWebSop ? (
+                      {isPkq ? (
+                        <>
+                          {renderStep(
+                            "internalNotify",
+                            "1",
+                            <>
+                              Send message to <strong>Internal Group</strong>.
+                              <br />
+                              (Use copy text on right)
+                            </>,
+                            <Send size={16} />,
+                            false,
+                            getInternalGroupMsg(),
+                          )}
+                        </>
+                      ) : isBoWebSop ? (
                         <>
                           {!isUrgent &&
                             renderStep(
@@ -641,7 +683,7 @@ const ResolutionModal = ({
                             "redmineUpdate",
                             "4",
                             <>
-                              Update <strong>Redmine & Sync BO8.7</strong>.
+                              Update <strong>Redmine</strong>.
                             </>,
                           )}
                         </>
@@ -655,7 +697,7 @@ const ResolutionModal = ({
                       <Send size={14} /> Messages to Copy
                     </h5>
 
-                    {isLateExtension && !isPartGame && !isBoWebSop && !isUrgent && (
+                    {isLateExtension && !isPartGame && !isBoWebSop && !isUrgent && !isPkq && (
                       <div className="space-y-1 shrink-0">
                         <label className="text-[10px] font-bold text-red-500 animate-pulse">
                           MANUAL CLOSE MSG (CRITICAL)

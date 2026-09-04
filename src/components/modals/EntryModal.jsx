@@ -446,22 +446,25 @@ const EntryModal = ({
         if (m.status === "Cancelled" || m.type === "Cancelled") return false;
 
         // "Part of the Game" is allowed to coexist
-        const existingIsPartGame =
-          m.type?.includes("Part of the Game") || !!m.affected_games;
+        const existingIsPartGame = m.type?.includes("Part of the Game") || !!m.affected_games;
         if (existingIsPartGame || isPartGame) return false;
 
-        // DB values are already absolute UTC ISO strings, convert to Epoch milliseconds
+        // Get absolute start time
         const mStartEpoch = dayjs(m.start_time).valueOf();
-        const mEndEpoch =
-          m.is_until_further_notice || !m.end_time
-            ? null
-            : dayjs(m.end_time).valueOf();
+        
+        // --- NEW FIX: Handle Completed UFN entries correctly ---
+        let mEndEpoch = null;
+        if (m.status === "Completed" && m.completion_time) {
+          // If it is completed, use the actual completion time as the end point
+          mEndEpoch = dayjs(m.completion_time).valueOf();
+        } else if (!m.is_until_further_notice && m.end_time) {
+          // Otherwise, use the scheduled end time
+          mEndEpoch = dayjs(m.end_time).valueOf();
+        }
 
         // Overlap formula: (NewStart < OldEnd) AND (OldStart < NewEnd)
-        const newStartsBeforeOldEnds =
-          mEndEpoch === null ? true : fStartEpoch < mEndEpoch;
-        const oldStartsBeforeNewEnds =
-          fEndEpoch === null ? true : mStartEpoch < fEndEpoch;
+        const newStartsBeforeOldEnds = mEndEpoch === null ? true : fStartEpoch < mEndEpoch;
+        const oldStartsBeforeNewEnds = fEndEpoch === null ? true : mStartEpoch < fEndEpoch;
 
         return newStartsBeforeOldEnds && oldStartsBeforeNewEnds;
       });

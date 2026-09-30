@@ -935,22 +935,31 @@ const Dashboard = ({ session }) => {
 
     setLoading(true);
 
-    // --- NEW LOGIC: PRESERVE URGENT TYPE WHEN EXTENDING ---
     const targetItem = maintenances.find((m) => m.id === id);
     const isUrgent = targetItem?.type?.toLowerCase().includes("urgent");
-    const newType = isUrgent
-      ? "Extended Maintenance (Urgent)"
-      : "Extended Maintenance";
+    const isPartGame = targetItem?.type?.includes("Part of the Game") || !!targetItem?.affected_games;
+
+    // --- NEW LOGIC: PRESERVE URGENT & PART OF GAME TYPES WHEN EXTENDING ---
+    let newType = "Extended Maintenance";
+    if (isPartGame && isUrgent) {
+      newType = "Part of the Game (Extended - Urgent)";
+    } else if (isPartGame) {
+      newType = "Part of the Game (Extended)";
+    } else if (isUrgent) {
+      newType = "Extended Maintenance (Urgent)";
+    }
 
     const payload = {
       is_until_further_notice: isNotice,
       end_time: isNotice ? null : newEndTimeDayJs.toISOString(),
       type: newType,
     };
+    
     const { error } = await supabase
       .from("maintenances")
       .update(payload)
       .eq("id", id);
+      
     setLoading(false);
     if (!error) {
       setIsResolutionModalOpen(false);

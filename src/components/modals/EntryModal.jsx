@@ -1082,7 +1082,7 @@ const EntryModal = ({
                     <span
                       className={`text-xs font-bold transition-colors ${rescheduleChecklist.boSync ? "text-emerald-900" : "text-gray-700"}`}
                     >
-                      Update BO8.2 & Sync BO8.7
+                      {isPartGame ? "Update BO8.2 (Do NOT Sync BO8.7)" : "Update BO8.2 & Sync BO8.7"}
                     </span>
                   </div>
                 </div>
@@ -1809,6 +1809,13 @@ const EntryModal = ({
             ) : (
               // --- STANDARD SCHEDULED / CANCELLED / PART OF GAME LAYOUT ---
               <div className="flex flex-col gap-4 h-full">
+                {isPartGame && !isCancelled && (
+                  <div className="bg-purple-50 border border-purple-200 text-purple-700 px-3 py-2.5 rounded-md text-[11px] font-bold flex items-center gap-2 shadow-sm animate-in fade-in zoom-in-95">
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>REMINDER: When creating the BO 8.2 announcement, do <span className="underline font-black">NOT</span> sync BO8.7 for Part-of-the-Game entries.</span>
+                  </div>
+                )}
+                
                 <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                     Generated Script
